@@ -90,6 +90,35 @@ class GeminiLoadBalancer:
         self._state: Dict[str, _KeyState] = {k: _KeyState() for k in self.api_keys}
         self._rr_key = 0
 
+    def iter_keys(self) -> List[Tuple[int, str]]:
+        """Round-robin key order starting at the current pointer."""
+        nkeys = len(self.api_keys)
+        return [((self._rr_key + i) % nkeys, self.api_keys[(self._rr_key + i) % nkeys]) for i in range(nkeys)]
+
+    def iter_models(self, preferred_model: Optional[str] = None) -> List[str]:
+        """
+        Model order for attempts.
+        If preferred_model is present in the list, it becomes the first, followed by the rest.
+        """
+        if not preferred_model or preferred_model not in self.models:
+            return list(self.models)
+        idx = self.models.index(preferred_model)
+        return self.models[idx:] + self.models[:idx]
+
+    def is_available(self, api_key: str, model: str, now: Optional[float] = None) -> bool:
+        t = time.time() if now is None else now
+        ks = self._state.get(api_key)
+        if ks is None:
+            return True
+        return ks.is_model_available(model, t)
+
+    def note_success(self, key_index: int) -> None:
+        """Advance round-robin pointer after a successful call."""
+        nkeys = len(self.api_keys)
+        if nkeys <= 0:
+            return
+        self._rr_key = (key_index + 1) % nkeys
+
     def choose(self) -> Tuple[str, str]:
         """
         Picks the next available (key, model) using:
@@ -130,4 +159,3 @@ class GeminiLoadBalancer:
         if soonest is None:
             return 0.0
         return max(0.0, soonest - now)
-

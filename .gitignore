@@ -4,3 +4,10 @@ __pycache__/
 .env
 .workspace/
 ai_team.db
+# Obsidian vaults (if stored inside this repo)
+obsidian-vaults/
+# Obsidian settings folder (common inside vaults)
+.obsidian/
+.idea/
+*.log
+logs/

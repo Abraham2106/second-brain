@@ -2,11 +2,14 @@ import json
 import re
 import os
 import sqlite3
+import logging
 from colorama import Fore, Style
 from .base_agent import AI_Agent
 from .prompts import MANAGER_PROMPT, PLANNER_PROMPT, BUILDER_PROMPT, CRITIC_PROMPT, RESEARCHER_PROMPT
 from .executor import write_file_tool, execute_command, write_obsidian_tool, create_vault_folder, patch_vault_file_tool
 from .vault_manager import get_vault_tree, get_note_relationships, sync_vault
+from .db import DB_PATH
+from .errors import AppError
 
 class Orchestrator:
     def __init__(self):
@@ -86,18 +89,31 @@ class Orchestrator:
     def process_task(self, task_id: str, prompt: str):
         print(f"\n{Fore.GREEN}[Usuario]{Style.RESET_ALL}: {prompt}\n")
         
+        log = logging.LoggerAdapter(logging.getLogger(__name__), {"task_id": task_id, "agent": "Orchestrator"})
+        log.info("Task loop started")
+
         current_prompt = prompt
         
         while True:
             # 1. El Manager decide
             print(f"{Fore.MAGENTA}[Manager]{Style.RESET_ALL} procesando siguiente paso...")
-            mgr_response = self.manager.execute(task_id, current_prompt)
+            try:
+                mgr_response = self.manager.execute(task_id, current_prompt)
+            except AppError as e:
+                log.error("Manager execution failed: %s", e)
+                print(f"[Error] {e}")
+                break
+            except Exception as e:
+                log.exception("Unexpected error calling Manager: %s", e)
+                print(f"[Error] Unexpected error calling Manager: {e}")
+                break
             try:
                 decision = json.loads(mgr_response)
                 next_agent_name = decision.get("next_agent")
                 instruction = decision.get("instruction")
             except Exception as e:
                 print(f"[Error] Manager no regresó JSON válido. Abortando. {mgr_response}")
+                log.error("Manager returned invalid JSON: %s", mgr_response)
                 break
                 
             print(f"{Fore.MAGENTA}[Manager]{Style.RESET_ALL} llama a {Fore.YELLOW}{next_agent_name}{Style.RESET_ALL}: {instruction}\n")
@@ -116,24 +132,56 @@ class Orchestrator:
                 if potential_note:
                     note_name = potential_note.group(1)
                     # Buscar la ruta real en el árbol
-                    cursor = sqlite3.connect(os.path.join(os.path.dirname(__file__), '..', 'ai_team.db')).cursor()
-                    cursor.execute("SELECT path FROM vault_nodes WHERE name LIKE ? AND type='file'", (f"%{note_name}%",))
+                    conn = sqlite3.connect(DB_PATH)
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT path FROM vault_nodes WHERE name LIKE ? AND type='file'",
+                        (f"%{note_name}%",),
+                    )
                     row = cursor.fetchone()
+                    conn.close()
                     if row:
                         relational_context = f"\n=== RELATIONS FOR '{row[0]}' ===\n{get_note_relationships(row[0])}"
 
                 planner_prompt = f"{instruction}\n\n=== CURRENT VAULT STRUCTURE ===\n{vault_tree}{relational_context}"
-                result = self.planner.execute(task_id, planner_prompt)
+                try:
+                    result = self.planner.execute(task_id, planner_prompt)
+                except AppError as e:
+                    log.error("Planner execution failed: %s", e)
+                    print(f"[Error] {e}")
+                    break
+                except Exception as e:
+                    log.exception("Unexpected error calling Planner: %s", e)
+                    print(f"[Error] Unexpected error calling Planner: {e}")
+                    break
                 print(f"{Fore.BLUE}[Planner]{Style.RESET_ALL}:\n{result}\n")
                 current_prompt = f"Planner ended its work. Result: {result}. Manager, who should go next?"
                 
             elif next_agent_name.lower() == "researcher":
-                result = self.researcher.execute(task_id, instruction)
+                try:
+                    result = self.researcher.execute(task_id, instruction)
+                except AppError as e:
+                    log.error("Researcher execution failed: %s", e)
+                    print(f"[Error] {e}")
+                    break
+                except Exception as e:
+                    log.exception("Unexpected error calling Researcher: %s", e)
+                    print(f"[Error] Unexpected error calling Researcher: {e}")
+                    break
                 print(f"{Fore.YELLOW}[Researcher]{Style.RESET_ALL}:\n{result}\n")
                 current_prompt = f"Researcher ended its work. Finding: {result}. Manager, pass this to the next agent."
                 
             elif next_agent_name.lower() == "builder":
-                result = self.builder.execute(task_id, instruction)
+                try:
+                    result = self.builder.execute(task_id, instruction)
+                except AppError as e:
+                    log.error("Builder execution failed: %s", e)
+                    print(f"[Error] {e}")
+                    break
+                except Exception as e:
+                    log.exception("Unexpected error calling Builder: %s", e)
+                    print(f"[Error] Unexpected error calling Builder: {e}")
+                    break
                 print(f"{Fore.CYAN}[Builder]{Style.RESET_ALL}:\n{result}\n")
                 
                 # Acciones automáticas basadas en el output del Builder
@@ -150,7 +198,16 @@ class Orchestrator:
                 current_prompt = f"Builder ended its work. Feedback: {builder_feedback}. Manager, should Critic review it?"
                 
             elif next_agent_name.lower() == "critic":
-                result = self.critic.execute(task_id, instruction)
+                try:
+                    result = self.critic.execute(task_id, instruction)
+                except AppError as e:
+                    log.error("Critic execution failed: %s", e)
+                    print(f"[Error] {e}")
+                    break
+                except Exception as e:
+                    log.exception("Unexpected error calling Critic: %s", e)
+                    print(f"[Error] Unexpected error calling Critic: {e}")
+                    break
                 print(f"{Fore.RED}[Critic]{Style.RESET_ALL}:\n{result}\n")
                 
                 if "CRITIC_APPROVED" in result:

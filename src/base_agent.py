@@ -1,143 +1,126 @@
-import os
+import logging
 import time
+from typing import Optional, Tuple
+
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
+
+from .config import get_settings
 from .db import get_history, save_message
-from .gemini_balancer import (
-    GeminiLoadBalancer,
-    load_gemini_api_keys_from_env,
-    load_gemini_models_from_env,
-    parse_retry_delay_seconds,
-)
-
-load_dotenv()
-
-# Lista de modelos para rotación (Failover)
-# Ordenados de mayor capacidad a menor para priorizar calidad
-GEMINI_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-3-flash-preview",
-    "gemini-3.1-flash-lite-preview",
-    "gemini-2.0-flash-lite",
-    "gemini-3.1-flash-live-preview",
-    "gemini-flash-latest"
-]
+from .errors import ConfigError, GeminiBackendsExhausted, GeminiRequestFailed
+from .gemini_balancer import GeminiLoadBalancer, parse_retry_delay_seconds
 
 
-# Balancer global (llaves + modelos). Se inicializa una vez.
-_BALANCER = None
+_BALANCER: Optional[GeminiLoadBalancer] = None
 
 
 def _get_balancer() -> GeminiLoadBalancer:
     global _BALANCER
     if _BALANCER is not None:
         return _BALANCER
-    keys = load_gemini_api_keys_from_env()
-    models = load_gemini_models_from_env(GEMINI_MODELS)
-    _BALANCER = GeminiLoadBalancer(api_keys=keys, models=models)
+
+    settings = get_settings()
+    if not settings.gemini_api_keys:
+        raise ConfigError("No Gemini API keys found. Set GEMINI_API_KEY or GEMINI_API_KEYS in .env.")
+    if not settings.gemini_models:
+        raise ConfigError("No Gemini models configured. Set GEMINI_MODELS or rely on defaults.")
+
+    _BALANCER = GeminiLoadBalancer(api_keys=settings.gemini_api_keys, models=settings.gemini_models)
     return _BALANCER
 
 
+def _build_prompt_with_history(task_id: str, prompt: str) -> Tuple[str, bool]:
+    """
+    Returns (final_prompt, has_history).
+    Only the first user prompt per task_id is persisted as role 'user' in SQLite.
+    """
+    raw_history = get_history(task_id)
+    if not raw_history:
+        return prompt, False
+
+    context_block = "=== PREVIOUS CHAT HISTORY ===\n"
+    for msg in raw_history:
+        role = msg["agent_name"]
+        content = msg["parts"][0]
+        context_block += f"[{role}]: {content}\n\n"
+    context_block += "=============================\n"
+
+    final_prompt = f"{context_block}\nNew message for you:\n[user/manager]: {prompt}"
+    return final_prompt, True
+
+
 class AI_Agent:
-    def __init__(self, name: str, system_prompt: str, model_name: str = None, require_json=False):
+    def __init__(self, name: str, system_prompt: str, model_name: Optional[str] = None, require_json: bool = False):
         self.name = name
         self.system_prompt = system_prompt
-        # Si no se especifica, usará el primero de la lista global
-        self.model_name = model_name or GEMINI_MODELS[0]
+        self.preferred_model = model_name
         self.require_json = require_json
-        
-        # El cliente se crea por request para poder rotar llaves (API keys).
-        
-        # Configuración de generación
+
         self.config = types.GenerateContentConfig()
         self.config.system_instruction = f"Agent Role: {self.name}\n{self.system_prompt}"
-        
         if self.require_json:
             self.config.response_mime_type = "application/json"
 
     def execute(self, task_id: str, prompt: str) -> str:
-        # Cargar historial
-        raw_history = get_history(task_id)
-        
-        context_block = "=== PREVIOUS CHAT HISTORY ===\n"
-        has_history = False
-        for msg in raw_history:
-            has_history = True
-            role = msg["agent_name"]
-            content = msg["parts"][0]
-            context_block += f"[{role}]: {content}\n\n"
-        context_block += "=============================\n"
-        
-        final_prompt = prompt
-        if has_history:
-             final_prompt = f"{context_block}\nNew message for you:\n[user/manager]: {prompt}"
-        
+        settings = get_settings()
         balancer = _get_balancer()
-        models = balancer.models
 
-        # Empezar por el modelo preferido (si está en la lista); si no, arrancar en 0.
-        start_model_idx = 0
-        if self.model_name in models:
-            start_model_idx = models.index(self.model_name)
+        log = logging.LoggerAdapter(logging.getLogger(__name__), {"task_id": task_id, "agent": self.name})
 
-        # Rondas controladas para evitar bucles infinitos si todas las llaves/modelos están agotados.
-        rounds = 3
+        final_prompt, has_history = _build_prompt_with_history(task_id, prompt)
+
+        preferred_model = self.preferred_model or (settings.gemini_models[0] if settings.gemini_models else None)
+        if not preferred_model:
+            raise ConfigError("No Gemini models configured.")
+
+        rounds = max(1, settings.gemini_max_rounds)
+
         for _ in range(rounds):
             now = time.time()
-            nkeys = len(balancer.api_keys)
-            nmodels = len(models)
-            any_attempted = False
+            attempted = False
 
-            # Política: por cada llave, probar todos los modelos; solo cambiar de llave cuando esa llave ya no tenga modelos disponibles.
-            for k in range(nkeys):
-                key_idx = (balancer._rr_key + k) % nkeys
-                api_key = balancer.api_keys[key_idx]
-
-                for m in range(nmodels):
-                    model = models[(start_model_idx + m) % nmodels]
-                    ks = balancer._state.get(api_key)
-                    if ks is not None and not ks.is_model_available(model, now):
+            for key_index, api_key in balancer.iter_keys():
+                for model in balancer.iter_models(preferred_model):
+                    if not balancer.is_available(api_key, model, now):
                         continue
 
-                    any_attempted = True
+                    attempted = True
                     try:
                         client = genai.Client(api_key=api_key)
                         response = client.models.generate_content(
                             model=model,
                             contents=final_prompt,
-                            config=self.config
+                            config=self.config,
                         )
-                        output = response.text
-
-                        if not has_history:
-                            save_message(task_id, "user", prompt)
-
-                        save_message(task_id, self.name, output)
-                        # Avanzar round-robin de llave para la próxima ejecución global.
-                        balancer._rr_key = (key_idx + 1) % nkeys
-                        return output
-
+                        output = response.text or ""
                     except Exception as e:
                         err_str = str(e)
                         if "429" in err_str:
                             retry_s = parse_retry_delay_seconds(err_str)
                             balancer.note_rate_limited(api_key, model, retry_s)
-                            print(
-                                f"[{self.name}] 429 en modelo={model} (key#{key_idx+1}/{nkeys}). "
-                                f"Rotando modelo; si se agotan, rotamos llave..."
+                            log.warning(
+                                "429 rate limit on model=%s. Cooling down%s and rotating.",
+                                model,
+                                f" ({retry_s}s)" if retry_s else "",
                             )
                             time.sleep(1)
                             continue
 
-                        err_msg = f"Error en {model}: {err_str}"
-                        print(err_msg)
-                        return "{ \"next_agent\": \"User\", \"instruction\": \"Error occurred API limit or connectivity.\"}"
+                        log.exception("Gemini request failed on model=%s: %s", model, err_str)
+                        raise GeminiRequestFailed(f"Error calling Gemini model '{model}': {err_str}") from e
 
-            if not any_attempted:
+                    if not has_history:
+                        save_message(task_id, "user", prompt)
+
+                    save_message(task_id, self.name, output)
+                    balancer.note_success(key_index)
+                    return output
+
+            if not attempted:
                 sleep_s = balancer.soonest_ready_in()
                 sleep_s = min(60.0, max(1.0, sleep_s))
-                print(f"[{self.name}] Todas las llaves/modelos están en cooldown. Esperando {int(sleep_s)}s...")
+                log.warning("All keys/models in cooldown. Sleeping %ss...", int(sleep_s))
                 time.sleep(sleep_s)
 
-        return "{ \"next_agent\": \"User\", \"instruction\": \"All keys/models exhausted or rate limited.\"}"
+        raise GeminiBackendsExhausted("All keys/models exhausted or rate-limited.")
+
