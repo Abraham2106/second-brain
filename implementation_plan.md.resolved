@@ -1,0 +1,74 @@
+# Sistema Multi-Agente IA (Versión F2P / Gratuita)
+
+Este documento detalla el plan para construir un sistema de inteligencia artificial basado en "equipos" (multi-agente), replicando las funcionalidades de sistemas de pago pero utilizando opciones 100% gratuitas.
+
+## Objetivo
+Desarrollar un equipo virtual de agentes (Planner, Researcher, Builder, Critic, Manager) capaces de colaborar, mantener memoria persistente con SQLite, y ejecutar código localmente, todo sin costo utilizando la capa gratuita de Gemini u otras alternativas locales/libres.
+
+## User Review Required
+
+> [!IMPORTANT]  
+> **Selección del Motor de IA:**  
+> Propongo utilizar la **API de Google Gemini (Google AI Studio)**, la cual tiene una capa gratuita (Free Tier) muy generosa (ideal para el contexto F2P) e incluye modelos potentes como Gemini 1.5 Flash y Gemini 1.5 Pro.  
+> *Alternativas si tienes hardware decente:* Podemos integrarlo con **Ollama** para usar modelos locales (como Llama 3 o qwen) que son 100% gratuitos y privados.  
+> **¿Prefieres ir 100% con la API de Gemini gratuita, o te interesa el soporte para LLMs locales (Ollama)?**
+
+> [!WARNING]  
+> **Ejecución de Código:**  
+> El sistema requerirá usar herramientas para ejecutar código (ej. scripts de Python generados por los agentes). Esto puede ser un riesgo de seguridad si la IA ejecuta comandos destructivos por error.  
+> **Propuesta:** Implementar un paso de confirmación humana `[y/N]` antes de ejecutar cualquier comando de terminal o script que modifique el sistema, o usar un contenedor de Docker. **¿Estás de acuerdo con añadir esta confirmación manual de seguridad?**
+
+## Arquitectura y Componentes "F2P"
+
+### 1. El Cerebro (LLM)
+- **Google Gemini API (Google AI Studio):** Proporciona acceso a modelos robustos sin costo mensual, pagando solo en "rate limits" justos para uso personal.
+- **Librería de Python:** `google-generativeai` (o cliente compatible con OpenAI si se usa Groq u Ollama).
+
+### 2. Los Agentes (Roles Definidos)
+Implementaremos clases en Python con prompts de sistema específicos (System Prompts):
+- **Manager (Director):** Recibe tu petición y decide a qué agente llamar.
+- **Planner (Planificador):** Devuelve respuestas en formato JSON estructurando los pasos necesarios.
+- **Researcher (Investigador):** Conecta a una API de búsqueda libre (ej. DuckDuckGo Search API - gratuita) o lee archivos de documentación.
+- **Builder (Ejecutor):** Escribe el código necesario basado en el plan.
+- **Critic (Revisor):** Acepta el código del Builder e inspecciona errores lógicos antes de dártelo por válido.
+
+### 3. Memoria Persistente Gratuita
+- **Base de Datos:** `sqlite3` (Incluido nativamente en Python, cero esfuerzo de instalación, costo cero). Guardará el historial de mensajes de la sesión por ID de tarea.
+- **Sistema de Archivos Local:** Carpeta `.workspace/` para guardar los planes en Markdown y el código generado.
+
+### 4. Orquestación y Flujo de Trabajo
+Un bucle (while loop) en Python que maneja transiciones de estado:
+`Usuario -> Manager -> Planner -> Builder <-> Critic -> Usuario`
+
+## Fases de Implementación Propuestas
+
+### Fase 1: Setup y Conexión Base
+- Configurar el lector de variables de entorno (`.env`) para la API KEY gratuita.
+- Crear la clase base `Agent` que envuelva la API de Gemini para recibir un `system_prompt` y mantener el historial.
+
+### Fase 2: Implementación de la Memoria (SQLite)
+- Crear el esquema de base de datos (`conversations`, `messages`, `tasks`).
+- Función para inyectar contexto previo cuando los agentes "despiertan" en sesiones nuevas.
+
+### Fase 3: Creación de los Roles (Prompts y Estructura)
+- Definir los 5 agentes principales y el flujo de orquestación.
+- Establecer un output en formato JSON (Structured Outputs) para que los agentes puedan "pasarse la pelota" programáticamente.
+
+### Fase 4: Ejecución en la Terminal y Archivos
+- Herramienta local: Permitir al *Builder* crear archivos `.py` o `.js` en el área de trabajo.
+- Herramienta local: Permitir ejecutar código usando `subprocess` de Python, capturando el "stdout" (salida) o errores para devolvérselos al *Critic*.
+
+## Open Questions
+
+1. **Lenguaje Inicial:** ¿Tienes preferencia de lenguaje de programación para desarrollar el orquestador? Yo propongo **Python**, por su tremendo ecosistema para IA y simplicidad.
+2. **Interactividad:** ¿Quieres que sea un script que se corre en terminal (ej. `python main.py "crea un juego de snake"`) o prefieres que montemos una interfaz mínima web gratuita en HTML/JS?
+
+## Verification Plan
+
+### Automated Tests
+- Validaremos la conectividad de la API gratuita.
+- Validaremos la creación y recuperación de memoria en SQLite.
+
+### Manual Verification
+- Te pediré que envíes un prompt simple como *"Investiga cómo se calcula el ROI y dame un plan para calcularlo en Python"*.
+- Observaremos los logs por terminal viendo cómo interactúa el Planner con el Builder sin perder el hilo.
