@@ -12,10 +12,14 @@
             "id": "93a29c114af73d65",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "type": "markdown",
+              "state": {
+                "file": "lenguajes/funcional/Funcional.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Funcional"
             }
           }
         ]
@@ -112,6 +116,7 @@
             "state": {
               "type": "backlink",
               "state": {
+                "file": "lenguajes/funcional/Funcional.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -121,7 +126,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks"
+              "title": "Backlinks for Funcional"
             }
           },
           {
@@ -130,11 +135,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
+                "file": "lenguajes/funcional/Funcional.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links"
+              "title": "Outgoing links from Funcional"
             }
           },
           {
@@ -158,12 +164,13 @@
             "state": {
               "type": "outline",
               "state": {
+                "file": "lenguajes/funcional/Funcional.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline"
+              "title": "Outline of Funcional"
             }
           }
         ]
@@ -186,27 +193,29 @@
   },
   "active": "93a29c114af73d65",
   "lastOpenFiles": [
-    "lenguajes/funcional/Funcional.md",
+    "lenguajes/funcional/ejemplos/transformacion_datos_funcional.py",
+    "lenguajes/funcional/ejemplos/factorial_recursivo_funcional.py",
+    "lenguajes/funcional/ejemplos",
+    "lenguajes/imperativo/ejemplos/gestion_tareas_imperativa.py",
+    "lenguajes/imperativo/ejemplos/factorial_iterativo.py",
+    "lenguajes/imperativo/ejemplos",
+    "lenguajes/logico/ejemplos/sistema_experto_animales.pl",
+    "lenguajes/logico/ejemplos/relaciones_familiares.pl",
+    "lenguajes/logico/ejemplos",
     "lenguajes/logico/Logico.md",
     "lenguajes/imperativo/Imperativo.md",
+    "lenguajes/funcional/Funcional.md",
     "Protocolos de Red/HTTP-3 y QUIC.md",
     "lenguajes/logico",
     "lenguajes/funcional",
-    "lenguajes/imperativo",
-    "lenguajes",
     "Proyectos_IA/MCP y Gestión de Contexto.md",
-    "Protocolos de Red",
     "Proyectos_IA/Arquitectura de Agentes.md",
     "Bases de Datos/neo4j.md",
     "prueba/Uso de Grafos para Relaciones.md",
     "Second Brain & AI-teams.md",
-    "prueba",
     "Untitled/Sistemas de Gestión de Conocimiento.md",
     "Bases de Datos/mongoDB.md",
     "Bases de Datos/redis.md",
-    "Bases de Datos",
-    "Proyectos_IA",
-    "Untitled",
     "Test Note 123.md",
     "New Task.md",
     "create.md",

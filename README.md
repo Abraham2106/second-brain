@@ -1,13 +1,17 @@
-# AI Team Assistant (F2P Edition)
+![AI Team Assistant](file:///c:/Users/solan/Documents/Personal/ai-team-assistant/image.jpg)
 
-Este proyecto recrea un flujo de automatización de inteligencia artificial donde múltiples agentes colaboran para resolver un problema, basado en un enfoque "Free-to-Play" (F2P). Usa la capa gratuita de **Google AI Studio (Gemini)** para orquestar los agentes y bases de datos locales.**
+# AI Team Assistant (Elite Edition)
 
-## Características
+Este proyecto recrea un flujo de automatización de inteligencia artificial donde múltiples agentes colaboran para resolver problemas complejos, optimizado para el ecosistema **Obsidian** y basado en un enfoque "Free-to-Play" (F2P).
 
-- 🧠 **Multi-Agente**: Incluye roles como Manager, Planner, Researcher, Builder y Critic.
-- 💾 **Memoria Persistente**: Utiliza SQLite para recordar el contexto de un proyecto.
-- ⚙️ **Ejecución de Código**: El Builder puede guardar archivos directamente en una carpeta `.workspace/` y proponer comandos que se ejecutan de manera segura.
-- 🛡️ **Seguridad primero**: Un filtro de seguridad requiere confirmación manual introduciendo `y` o `n` en la terminal, asegurando que los scripts no borren cosas o hagan movimientos de red peligrosos sin autorización.
+## Características Elite
+
+- 🧠 **Multi-Agente Profesional**: Manager, Planner, Researcher, Builder y Critic operando con lógica "Token-Hungry" para máxima profundidad.
+- ✒️ **Edición Quirúrgica (Patch System)**: Edita notas existentes mediante parches `unified diff`, evitando sobreescrituras accidentales y manteniendo el historial de cambios.
+- 💾 **Memoria Relacional Profunda**: SQLite indexa todo el vault (notas, links, tags y assets como scripts o JSON), permitiendo al Planner razonar sobre la estructura completa.
+- 💎 **Estándar Obsidian Premium**: Generación automática de **Properties (YAML)**, uso de Callouts avanzados y diagramas **Mermaid** integrados.
+- ⚖️ **Gemini Load Balancer**: Rotación inteligente entre múltiples API Keys y modelos para mitigar los límites de la capa gratuita (429/503).
+- 🛡️ **Seguridad Local**: Registro de auditoría de todas las ediciones de archivos y confirmación manual de comandos bash.
 
 ## Instalación
 

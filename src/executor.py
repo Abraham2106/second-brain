@@ -2,6 +2,7 @@ import subprocess
 import os
 import re
 import sqlite3
+from pathlib import Path
 from colorama import Fore, Style
 from dotenv import load_dotenv
 
@@ -191,6 +192,29 @@ def write_obsidian_tool(filename: str, content: str) -> str:
         return f"Obsidian note '{filename}' saved and indexed successfully."
     except Exception as e:
         return f"Error saving Obsidian note: {str(e)}"
+
+def write_vault_asset_tool(filename: str, content: str) -> str:
+    """
+    Guarda un archivo de texto arbitrario dentro del Vault de Obsidian (no solo .md).
+    Ejemplos: .pl, .py, .json, etc.
+    """
+    load_dotenv()
+    vault_dir = os.getenv("OBSIDIAN_VAULT_PATH")
+    if not vault_dir:
+        return "Error: OBSIDIAN_VAULT_PATH not set in .env"
+
+    vault_dir = vault_dir.strip('"').strip("'").strip()
+
+    # Respetar subcarpetas y normalizar separadores.
+    filename = filename.replace("\\", "/").lstrip("/")
+    filepath = Path(vault_dir) / Path(filename)
+
+    try:
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        filepath.write_text(content, encoding="utf-8")
+        return f"Vault asset '{filename}' saved successfully."
+    except Exception as e:
+        return f"Error saving vault asset: {str(e)}"
 
 def create_vault_folder(folder_path: str) -> str:
     """Crea una carpeta dentro del Vault de Obsidian."""

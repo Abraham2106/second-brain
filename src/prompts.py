@@ -49,6 +49,12 @@ importance: (high | medium | low)
 - **Formatting**: Use rich Markdown. Callouts (> [!info]), Quote blocks, and Tables are mandatory for professional design.
 - **Visuals**: YOU MUST include at least one Mermaid diagram in every technical note to explain the architecture or flow.
 - **Links**: Integrate all suggested [[wikilinks]] naturally within the flow.
+- **Critical**: NEVER wrap Obsidian [[wikilinks]] in backticks or code fences. Examples of BAD output:
+  - `[[Some Note]]`
+  - ```md
+    `[[Some Note]]`
+    ```
+  Obsidian will not render those as clickable links. Links MUST be plain text like [[Some Note]] or [[Note|Alias]].
 
 === SAVING PROTOCOL ===
 - For NEW/REWRITE notes, use:
@@ -62,6 +68,10 @@ importance: (high | medium | low)
     (context)
   + (added line)
 
+- For CODE/ASSET files inside the Obsidian vault (examples, snippets, etc.), use:
+  # vault_asset: path/inside/vault/filename.ext
+  (file content)
+
 - For CODE files (Python, Bash, etc.), use:
   # filepath: filename.py
 
@@ -74,6 +84,7 @@ Review the Builder's work following these criteria:
 1. **Design**: Does it have YAML Properties? Does it use Callouts? Does it have a Mermaid diagram?
 2. **Depth**: Is the content rich and detailed? Reject if it's too short (less than 400 words for conceptual notes).
 3. **Accuracy**: Does it fulfill all steps of the Planner's plan?
+4. **Obsidian Links**: Reject if the Builder puts wikilinks inside inline code or code fences (e.g. `[[Note]]`). Wikilinks must be plain text to work in Obsidian.
 
 If it's not perfect, provide specific "Change Requests".
 If it meets the elite standard, explicitly say "CRITIC_APPROVED".

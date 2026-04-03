@@ -29,10 +29,9 @@ def sync_vault(vault_path: str):
             ''', (rel_path, d, 'folder'))
 
         for f in files:
-            if f.endswith('.md'):
-                full_path = os.path.join(root, f)
-                rel_path = os.path.relpath(full_path, vault_path).replace('\\', '/')
-                sync_node(vault_path, rel_path, cursor)
+            full_path = os.path.join(root, f)
+            rel_path = os.path.relpath(full_path, vault_path).replace('\\', '/')
+            sync_node(vault_path, rel_path, cursor)
 
     conn.commit()
     conn.close()
@@ -60,7 +59,7 @@ def sync_node(vault_base: str, rel_path: str, cursor):
         ON CONFLICT(path) DO UPDATE SET content=excluded.content, last_seen=CURRENT_TIMESTAMP
     ''', (rel_path, name, ntype, content))
 
-    if ntype == 'file':
+    if ntype == 'file' and rel_path.lower().endswith('.md'):
         extract_links(rel_path, content, cursor)
         extract_tags(rel_path, content, cursor)
 

@@ -5,7 +5,8 @@ __pycache__/
 .workspace/
 ai_team.db
 # Obsidian vaults (if stored inside this repo)
-obsidian-vaults/
+# Ignore only the personal vault by default.
+obsidian-vaults/Playground/
 # Obsidian settings folder (common inside vaults)
 .obsidian/
 .idea/

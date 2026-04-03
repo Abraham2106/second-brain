@@ -1,17 +1,10 @@
-from dotenv import load_dotenv
-
-from src.gemini_balancer import (
-    load_gemini_api_keys_from_env,
-    load_gemini_models_from_env,
-)
-from src.base_agent import GEMINI_MODELS
+from src.config import get_settings
 
 
 def main() -> None:
-    load_dotenv()
-
-    keys = load_gemini_api_keys_from_env()
-    models = load_gemini_models_from_env(GEMINI_MODELS)
+    settings = get_settings()
+    keys = settings.gemini_api_keys
+    models = settings.gemini_models
 
     print("Gemini key/model balancer config")
     print(f"- keys detected: {len(keys)}")
@@ -23,4 +16,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

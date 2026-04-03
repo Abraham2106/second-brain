@@ -6,7 +6,14 @@ import logging
 from colorama import Fore, Style
 from .base_agent import AI_Agent
 from .prompts import MANAGER_PROMPT, PLANNER_PROMPT, BUILDER_PROMPT, CRITIC_PROMPT, RESEARCHER_PROMPT
-from .executor import write_file_tool, execute_command, write_obsidian_tool, create_vault_folder, patch_vault_file_tool
+from .executor import (
+    write_file_tool,
+    execute_command,
+    write_obsidian_tool,
+    write_vault_asset_tool,
+    create_vault_folder,
+    patch_vault_file_tool,
+)
 from .vault_manager import get_vault_tree, get_note_relationships, sync_vault
 from .db import DB_PATH
 from .errors import AppError
@@ -47,6 +54,23 @@ class Orchestrator:
             
             print(f"{Fore.CYAN}[Sistema]{Style.RESET_ALL} Guardando nota en Obsidian: {filepath}")
             res = write_obsidian_tool(filepath, content)
+            print(f"{Fore.CYAN}[Sistema]{Style.RESET_ALL} Resultado: {res}")
+
+    def extract_and_save_vault_assets(self, builder_output: str):
+        """
+        Busca bloques que indican vault_asset y guarda archivos de texto arbitrarios dentro del vault.
+        Uso esperado en salida del Builder:
+          # vault_asset: lenguajes/logico/ejemplos/relaciones_familiares.pl
+          ...contenido...
+        """
+        pattern = r"(?:^|\n)#\s*vault_asset:\s*(.+?)\n(.*?)(?=\n#\s*vault_asset:|\n#\s*vault_file:|\n#\s*vault_folder:|\n#\s*patch_vault_file:|\n#\s*filepath:|$)"
+        matches = re.finditer(pattern, builder_output, re.DOTALL)
+
+        for match in matches:
+            filepath = match.group(1).strip()
+            content = match.group(2).strip()
+            print(f"{Fore.CYAN}[Sistema]{Style.RESET_ALL} Guardando asset en Obsidian: {filepath}")
+            res = write_vault_asset_tool(filepath, content)
             print(f"{Fore.CYAN}[Sistema]{Style.RESET_ALL} Resultado: {res}")
             
     def extract_and_create_folders(self, builder_output: str):
@@ -187,6 +211,7 @@ class Orchestrator:
                 # Acciones automáticas basadas en el output del Builder
                 self.extract_and_save_code(result)
                 self.extract_and_save_vault_notes(result)
+                self.extract_and_save_vault_assets(result)
                 self.extract_and_create_folders(result)
                 self.extract_and_apply_patches(result, task_id)
                 cmd_results = self.extract_and_run_commands(result)
