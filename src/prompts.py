@@ -57,6 +57,7 @@ importance: (high | medium | low)
   Obsidian will not render those as clickable links. Links MUST be plain text like [[Some Note]] or [[Note|Alias]].
 
 === SAVING PROTOCOL ===
+- Do NOT return files as JSON. Use the directives below so the Orchestrator can save them reliably.
 - For NEW/REWRITE notes, use:
   # vault_file: Path/Note Name
   (YAML content)

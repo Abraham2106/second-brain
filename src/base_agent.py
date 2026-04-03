@@ -92,22 +92,35 @@ class AI_Agent:
                             contents=final_prompt,
                             config=self.config,
                         )
+                        
+                        # Manejo de bloqueos por seguridad (Safety Filters)
+                        if response.candidates and response.candidates[0].finish_reason == "SAFETY":
+                            log.warning("Content blocked by SAFETY filters on model=%s.", model)
+                            raise GeminiRequestFailed(f"El contenido fue bloqueado por filtros de seguridad del modelo {model}.")
+                        
                         output = response.text or ""
                     except Exception as e:
-                        err_str = str(e)
-                        if "429" in err_str:
-                            retry_s = parse_retry_delay_seconds(err_str)
+                        err_str = str(e).lower()
+                        # Error de cuota (429)
+                        if "429" in err_str or "quota" in err_str:
+                            retry_s = parse_retry_delay_seconds(str(e))
                             balancer.note_rate_limited(api_key, model, retry_s)
                             log.warning(
-                                "429 rate limit on model=%s. Cooling down%s and rotating.",
-                                model,
-                                f" ({retry_s}s)" if retry_s else "",
+                                "429 rate limit on model=%s. Cooling down and rotating.",
+                                model
                             )
                             time.sleep(1)
                             continue
+                        
+                        # Error de Servidor (5xx) - Reintentar con otra llave/modelo
+                        if any(code in err_str for code in ["500", "503", "504"]):
+                            log.error("Server error (5xx) on model=%s. Rotating...", model)
+                            balancer.note_rate_limited(api_key, model, 30) # Penalización de 30s
+                            continue
 
-                        log.exception("Gemini request failed on model=%s: %s", model, err_str)
-                        raise GeminiRequestFailed(f"Error calling Gemini model '{model}': {err_str}") from e
+                        # Otros errores (400, 401, etc.)
+                        log.exception("Gemini request failed (Non-retryable) on model=%s: %s", model, str(e))
+                        raise GeminiRequestFailed(f"Error crítico en modelo '{model}': {str(e)}") from e
 
                     if not has_history:
                         save_message(task_id, "user", prompt)

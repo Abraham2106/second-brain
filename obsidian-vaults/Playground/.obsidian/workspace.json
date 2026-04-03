@@ -14,12 +14,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "lenguajes/funcional/Funcional.md",
+                "file": "Cloud/Cloud como Futuro de la Web_Internet.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Funcional"
+              "title": "Cloud como Futuro de la Web_Internet"
             }
           }
         ]
@@ -116,7 +116,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "lenguajes/funcional/Funcional.md",
+                "file": "Cloud/Cloud como Futuro de la Web_Internet.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -126,7 +126,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Funcional"
+              "title": "Backlinks for Cloud como Futuro de la Web_Internet"
             }
           },
           {
@@ -135,12 +135,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "lenguajes/funcional/Funcional.md",
+                "file": "Cloud/Cloud como Futuro de la Web_Internet.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from Funcional"
+              "title": "Outgoing links from Cloud como Futuro de la Web_Internet"
             }
           },
           {
@@ -164,13 +164,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "lenguajes/funcional/Funcional.md",
+                "file": "Cloud/Cloud como Futuro de la Web_Internet.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Funcional"
+              "title": "Outline of Cloud como Futuro de la Web_Internet"
             }
           }
         ]
@@ -193,21 +193,33 @@
   },
   "active": "93a29c114af73d65",
   "lastOpenFiles": [
+    "Cloud/Cloud AI Platforming/MLOps Principles and Practices.md",
+    "Cloud/Cloud como Futuro de la Web_Internet.md",
+    "Cloud/Cloud SecOps/Shift-Left Security in CI-CD.md",
+    "Cloud/Brecha entre AI y Cloud en Innovación.md",
+    "Estudio de Mercado",
+    "Cloud/Cloud DevOps/Infrastructure as Code (IaC) with Terraform.md",
+    "Cloud/Cloud Sec/Cloud IAM and Data Protection.md",
+    "Cloud/Cloud Architect/Cloud Architecture Design Principles.md",
+    "lenguajes/funcional/Funcional.md",
+    "Cloud/Cloud AI Platforming",
+    "Cloud/Cloud SecOps/Security Automation and Incident Response in SecOps.md",
+    "Cloud/Cloud SecOps",
+    "Cloud/Cloud Sec/Cloud Security Best Practices and Compliance.md",
+    "Cloud/Cloud Native/Kubernetes and Container Orchestration.md",
+    "Cloud/Cloud Native/Cloud Native Fundamentals.md",
+    "Cloud/Cloud DevOps/CI-CD Pipeline Design and Automation.md",
+    "Cloud/Cloud Architect/Cloud Migration Strategies.md",
+    "Cloud/Cloud Sec",
+    "Cloud/Cloud Native",
+    "Cloud/Cloud DevOps",
+    "Cloud/Cloud Architect",
+    "Cloud",
+    "debug_asset.py",
     "lenguajes/funcional/ejemplos/transformacion_datos_funcional.py",
-    "lenguajes/funcional/ejemplos/factorial_recursivo_funcional.py",
-    "lenguajes/funcional/ejemplos",
-    "lenguajes/imperativo/ejemplos/gestion_tareas_imperativa.py",
-    "lenguajes/imperativo/ejemplos/factorial_iterativo.py",
-    "lenguajes/imperativo/ejemplos",
-    "lenguajes/logico/ejemplos/sistema_experto_animales.pl",
-    "lenguajes/logico/ejemplos/relaciones_familiares.pl",
-    "lenguajes/logico/ejemplos",
     "lenguajes/logico/Logico.md",
     "lenguajes/imperativo/Imperativo.md",
-    "lenguajes/funcional/Funcional.md",
     "Protocolos de Red/HTTP-3 y QUIC.md",
-    "lenguajes/logico",
-    "lenguajes/funcional",
     "Proyectos_IA/MCP y Gestión de Contexto.md",
     "Proyectos_IA/Arquitectura de Agentes.md",
     "Bases de Datos/neo4j.md",
@@ -216,9 +228,6 @@
     "Untitled/Sistemas de Gestión de Conocimiento.md",
     "Bases de Datos/mongoDB.md",
     "Bases de Datos/redis.md",
-    "Test Note 123.md",
-    "New Task.md",
-    "create.md",
-    "Welcome.md"
+    "Test Note 123.md"
   ]
 }

@@ -25,16 +25,16 @@ Este proyecto recrea un flujo de automatización de inteligencia artificial dond
    ```
 3. Renombra `.env.example` a `.env` y pega tu `GEMINI_API_KEY` (Sácala de [Google AI Studio](https://aistudio.google.com/app/apikey)).
 
-## RotaciÃ³n de API Keys (Load Balancer)
+## Rotación de API Keys (Load Balancer)
 
-Si usas varias llaves, puedes rotarlas automÃ¡ticamente cuando una se queda sin cuota (429 `RESOURCE_EXHAUSTED`).
+Si usas varias llaves, puedes rotarlas automáticamente cuando una se queda sin cuota (429 `RESOURCE_EXHAUSTED`).
 
 En tu `.env` puedes definir:
 
 - `GEMINI_API_KEYS="key1,key2,key3"`
 - (opcional) `GEMINI_MODELS="gemini-2.5-flash,gemini-2.0-flash-lite"`
 
-El runtime intenta todos los modelos de la llave actual; si todos estÃ¡n agotados/en cooldown, pasa a la siguiente llave y asÃ­ sucesivamente.
+El runtime intenta todos los modelos de la llave actual; si todos están agotados/en cooldown, pasa a la siguiente llave y así sucesivamente.
 
 ## Uso
 
