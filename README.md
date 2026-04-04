@@ -1,47 +1,42 @@
-![AI Team Assistant](file:///c:/Users/solan/Documents/Personal/ai-team-assistant/image.jpg)
+# 🧠 Second Brain: AI Team Assistant (Railway Edition)
 
-# AI Team Assistant (Elite Edition)
+Este es el núcleo de la inteligencia del **Second Brain**. Un orquestador multi-agente diseñado para operar sobre vaults de **Obsidian**, permitiendo que un equipo de agentes (Manager, Planner, Builder, Researcher y Critic) colaboren en la creación y edición estructurada de notas y código.
 
-Este proyecto recrea un flujo de automatización de inteligencia artificial donde múltiples agentes colaboran para resolver problemas complejos, optimizado para el ecosistema **Obsidian** y basado en un enfoque "Free-to-Play" (F2P).
+🚀 **Acceso en Vivo**: [https://second-brain-production-53b3.up.railway.app/](https://second-brain-production-53b3.up.railway.app/)
 
-## Características Elite
+## 🏗️ Arquitectura Desacoplada
 
-- 🧠 **Multi-Agente Profesional**: Manager, Planner, Researcher, Builder y Critic operando con lógica "Token-Hungry" para máxima profundidad.
-- ✒️ **Edición Quirúrgica (Patch System)**: Edita notas existentes mediante parches `unified diff`, evitando sobreescrituras accidentales y manteniendo el historial de cambios.
-- 💾 **Memoria Relacional Profunda**: SQLite indexa todo el vault (notas, links, tags y assets como scripts o JSON), permitiendo al Planner razonar sobre la estructura completa.
-- 💎 **Estándar Obsidian Premium**: Generación automática de **Properties (YAML)**, uso de Callouts avanzados y diagramas **Mermaid** integrados.
-- ⚖️ **Gemini Load Balancer**: Rotación inteligente entre múltiples API Keys y modelos para mitigar los límites de la capa gratuita (429/503).
-- 🛡️ **Seguridad Local**: Registro de auditoría de todas las ediciones de archivos y confirmación manual de comandos bash.
+Este repositorio forma parte de una arquitectura de microservicios:
+1.  **Assistant (Este Repo)**: Maneja la interfaz de usuario (Streamlit), la orquestación de tareas y la persistencia en el Vault.
+2.  **[Gemini Proxy Balancer](https://github.com/Abraham2106/gemini-proxy-balancer)**: Un servicio independiente que gestiona la rotación de API Keys y el balanceo de carga para mitigar límites de cuota (429/503).
 
-## Instalación
+## ✨ Características Elite
 
-1. Asegúrate de tener Python instalado (3.10+ recomendado).
-2. Clona este repositorio y crea el entorno virtual:
-   ```bash
-   python -m venv venv
-   # Activa en windows = .\venv\Scripts\activate
-   # Activa en mac/linux = source venv/bin/activate
-   pip install google-generativeai python-dotenv colorama
-   ```
-3. Renombra `.env.example` a `.env` y pega tu `GEMINI_API_KEY` (Sácala de [Google AI Studio](https://aistudio.google.com/app/apikey)).
+- 🤖 **Multi-Agente Profesional**: Lógica coordinada entre agentes especializados para resolver tareas complejas.
+- ✒️ **Edición Quirúrgica (Patch System)**: Modifica tus notas de Obsidian usando parches `unified diff` de alta precisión.
+- 🗃️ **Indexación por SQLite**: Todo tu vault (links, tags y contenido) es indexado para que los agentes tengan contexto global.
+- 🐳 **Docker Ready**: Configurado para desplegarse instantáneamente en Railway con persistencia de datos.
 
-## Rotación de API Keys (Load Balancer)
+## 🚀 Despliegue y Configuración
 
-Si usas varias llaves, puedes rotarlas automáticamente cuando una se queda sin cuota (429 `RESOURCE_EXHAUSTED`).
+Para correrlo localmente o en la nube, necesitas configurar las siguientes variables de entorno:
 
-En tu `.env` puedes definir:
+```env
+# URL de tu instancia de Gemini Proxy Balancer
+GEMINI_PROXY_URL="https://tu-proxy.up.railway.app/v1/chat/completions"
 
-- `GEMINI_API_KEYS="key1,key2,key3"`
-- (opcional) `GEMINI_MODELS="gemini-2.5-flash,gemini-2.0-flash-lite"`
-
-El runtime intenta todos los modelos de la llave actual; si todos están agotados/en cooldown, pasa a la siguiente llave y así sucesivamente.
-
-## Uso
-
-Simplemente llama al script principal:
-
-```bash
-python main.py "Hola equipo, quiero construir un script en python que juegue piedra papel o tijera"
+# Ruta de tu vault (en Railway usa /app/obsidian-vaults)
+OBSIDIAN_VAULT_PATH="/app/obsidian-vaults"
 ```
 
-El Manager inicializará el trabajo, el Planner definirá los pasos, y el Builder empezará a generar el código guardándolo en `/.workspace/`.
+### Ejecución con Docker
+```bash
+docker build -t second-brain .
+docker run -p 8501:8501 --env-file .env second-brain
+```
+
+## 🛠️ Stack Tecnológico
+- **UI**: Streamlit
+- **Logic**: Python 3.12 (Layered Architecture)
+- **Database**: SQLite
+- **Infrastructure**: Docker & Railway
