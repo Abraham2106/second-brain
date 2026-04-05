@@ -39,6 +39,31 @@ class Orchestrator:
         self.researcher = AI_Agent("Researcher", RESEARCHER_PROMPT)
         self.builder = AI_Agent("Builder", BUILDER_PROMPT)
         self.critic = AI_Agent("Critic", CRITIC_PROMPT)
+        self.history = []
+
+    def _extract_plan_of_record(self, task_id: str) -> str:
+        """Find the last proposal from the Planner in the history."""
+        from src.infrastructure.persistence.db import get_history
+        raw = get_history(task_id)
+        # Search backwards for the latest Planner output
+        for msg in reversed(raw):
+            if msg["agent_name"].lower() == "planner":
+                return f"\n=== PLAN OF RECORD (from previous planning turn) ===\n{msg['parts'][0]}\n"
+        return ""
+
+    def _extract_user_feedback(self, task_id: str) -> str:
+        """Aggregate all user messages to capture every correction."""
+        from src.infrastructure.persistence.db import get_history
+        raw = get_history(task_id)
+        feedback_parts = []
+        for msg in raw:
+            if msg["agent_name"].lower() == "user":
+                feedback_parts.append(msg["parts"][0])
+        
+        if not feedback_parts:
+            return ""
+        
+        return "\n=== CONSOLIDATED USER FEEDBACK / AMENDMENTS ===\n" + "\n---\n".join(feedback_parts) + "\n"
 
     def _parse_manager_decision(self, mgr_response: str) -> tuple[str, str]:
         """
@@ -515,7 +540,7 @@ class Orchestrator:
             f"Previous output to reformat:\n{previous_output}"
         )
 
-    def process_task(self, task_id: str, prompt: str, mode: str = "Standard"):
+    def process_task(self, task_id: str, prompt: str, mode: str = "Standard", workflow: str = "Plan"):
         # Load Persona/Mode instruction
         default_mode = "Standard" if "Standard" in PERSONAS else (next(iter(PERSONAS.keys())) if PERSONAS else None)
         effective_mode = mode if mode in PERSONAS else default_mode
@@ -523,13 +548,43 @@ class Orchestrator:
             raise ValueError("No personas configured.")
         persona = PERSONAS[effective_mode]
 
+        # Workflow Policy
+        if workflow == "Execute":
+            wf_instruction = (
+                "\n\n=== CURRENT WORKFLOW: EXECUTE ===\n"
+                "Your priority is to IMPLEMENT the agreed plan from the chat history.\n"
+                "1. Use 'Builder' to create/modify files.\n"
+                "2. Use 'Critic' for quality review.\n"
+                "3. Use 'Planner' or 'Researcher' only if critical missing details arise during execution.\n"
+                "Finish quickly with a professional summary once the work is applied."
+            )
+        else:  # Plan Mode
+            wf_instruction = (
+                "\n\n=== CURRENT WORKFLOW: PLAN ===\n"
+                "Your priority is to RESEARCH, DESIGN, and PROPOSE.\n"
+                "1. DO NOT call the 'Builder' for permanent vault writes or file creation.\n"
+                "2. Work with 'Planner' and 'Researcher' to create a high-quality proposal.\n"
+                "3. ALWAYS end by calling 'User' to ask for feedback, clarification, or approval of the proposed plan.\n"
+                "Do not finalize until the user is satisfied with the architecture."
+            )
+
         log = logging.LoggerAdapter(logging.getLogger(__name__), {"task_id": task_id, "agent": "Orchestrator"})
         log.info("Task loop started")
 
         current_prompt = prompt
         original_user_request = self._extract_original_user_request(prompt)
         manager_language_policy = build_manager_language_policy(original_user_request)
-        self.manager.update_system_prompt(persona["instruction"] + "\n\n" + manager_language_policy)
+
+        # Context Extraction for Memory System
+        plan_of_record = self._extract_plan_of_record(task_id)
+        consolidated_feedback = self._extract_user_feedback(task_id)
+        
+        # Build memory-aware instruction
+        memory_instruction = f"\n\n=== RECENT CONTEXT SUMMARY ===\n{plan_of_record}\n{consolidated_feedback}"
+        
+        self.manager.update_system_prompt(
+            persona["instruction"] + wf_instruction + memory_instruction + "\n\n" + manager_language_policy
+        )
 
         print(f"\n{Fore.GREEN}[User]{Style.RESET_ALL} (Mode: {effective_mode}): {prompt}\n")
         

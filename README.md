@@ -34,14 +34,25 @@ Second Brain is a **multi-agent AI system** that turns natural language instruct
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                    Streamlit UI (Chat)                    │
+│          ┌────────────┐  ┌──────────────────┐            │
+│          │  Workflow   │  │  Persona / Mode  │            │
+│          │ (Plan|Exec) │  │ (Edu|Res|Org|..) │            │
+│          └──────┬──────┘  └────────┬─────────┘            │
+├─────────────────┼──────────────────┼─────────────────────┤
+│                 ▼ Application Layer ▼                     │
+│  ┌─────────────────────────────────────────────────────┐ │
+│  │              Orchestrator (Workflow Engine)          │ │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌──────┐ ┌─────┐ │ │
+│  │  │Manager │→│Planner │→│Builder │→│Critic│→│User │ │ │
+│  │  └────────┘ └────────┘ └────────┘ └──────┘ └─────┘ │ │
+│  │  ┌──────────────────────────────────────────┐       │ │
+│  │  │         Chat Memory System               │       │ │
+│  │  │  Plan of Record · User Feedback Tracker  │       │ │
+│  │  └──────────────────────────────────────────┘       │ │
+│  └─────────────────────────────────────────────────────┘ │
 ├──────────────────────────────────────────────────────────┤
-│                  Application Layer                        │
+│                  Infrastructure Layer                     │
 │  ┌─────────────┐  ┌──────────┐  ┌─────────────────────┐ │
-│  │ Orchestrator │──│  Agents  │──│  Persona / Modes    │ │
-│  └──────┬──────┘  └──────────┘  └─────────────────────┘ │
-├─────────┼────────────────────────────────────────────────┤
-│         │           Infrastructure Layer                  │
-│  ┌──────▼──────┐  ┌──────────┐  ┌─────────────────────┐ │
 │  │   Executor  │  │  SQLite  │  │   Vault Manager     │ │
 │  │ (Patch/Write)│  │  (Index) │  │ (Sync/Links/Tags)  │ │
 │  └─────────────┘  └──────────┘  └─────────────────────┘ │
@@ -54,11 +65,24 @@ Second Brain is a **multi-agent AI system** that turns natural language instruct
 ## Key Features
 
 - **🤖 Multi-Agent Pipeline** — Five specialized agents collaborate through a structured reasoning chain, not just a single prompt-response cycle.
+- **📋 Plan & Execute Workflows** — Decouple research from implementation. Use **Plan** mode to propose, iterate, and get feedback, then switch to **Execute** to build exactly what was agreed upon. A safety warning protects against executing without a plan.
+- **🧠 Structured Chat Memory** — Conversations are tagged by role (user feedback, coordinator decisions, agent outputs) so agents prioritize your latest instructions. The system extracts a *Plan of Record* and *Consolidated User Feedback* for seamless plan-to-execution transitions.
 - **✒️ Surgical File Editing** — Modifies existing notes using `unified diff` patches with SHA-256 integrity checks and full audit logging.
 - **🗃️ Deep Vault Indexing** — SQLite indexes every note, wikilink, and tag in your vault, giving agents full structural awareness.
-- **🎭 Persona Modes** — Switch between Education, Research, Planning, and Organization modes to adjust agent behavior and output depth.
+- **🎭 Persona × Workflow Matrix** — Combine any Persona (Education, Research, Planning, Organization) with any Workflow (Plan, Execute) for full control over tone, depth, and action.
 - **📎 File Attachments** — Upload PDFs and text files as additional context for agent reasoning.
 - **🔌 Decoupled Proxy** — All LLM calls route through the [Gemini Proxy Balancer](https://github.com/Abraham2106/gemini-proxy-balancer), keeping API keys secure and enabling intelligent rate-limit handling.
+
+## Workflow
+
+Second Brain operates in two distinct phases, controlled by a toolbar selector:
+
+| Phase | What Happens | Agents Used |
+|-------|-------------|-------------|
+| **📋 Plan** | Research, design, and propose a vault structure. No files are written. The system always asks for your feedback before proceeding. | Manager → Planner → Researcher → User |
+| **⚡ Execute** | Implement the agreed plan. Files are created/modified in your vault and reviewed for quality. | Manager → Builder → Critic → User |
+
+> **Safety Check:** If you switch to Execute without a prior Plan turn, the UI shows a warning toast to prevent unintended vault modifications.
 
 ## Quick Start
 

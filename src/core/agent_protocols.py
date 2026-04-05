@@ -11,20 +11,35 @@ from src.core.errors import ConfigError, GeminiBackendsExhausted, GeminiRequestF
 def _build_prompt_with_history(task_id: str, prompt: str) -> Tuple[str, bool]:
     """
     Returns (final_prompt, has_history).
-    Only the first user prompt per task_id is persisted as role 'user' in SQLite.
+    Structures the history to highlight user instructions and agent roles.
     """
     raw_history = get_history(task_id)
     if not raw_history:
         return prompt, False
 
-    context_block = "=== PREVIOUS CHAT HISTORY ===\n"
+    context_parts = ["=== PREVIOUS CONVERSATION CONTEXT ==="]
+    
     for msg in raw_history:
         role = msg["agent_name"]
         content = msg["parts"][0]
-        context_block += f"[{role}]: {content}\n\n"
-    context_block += "=============================\n"
+        
+        if role.lower() == "user":
+            tag = "[USER FEEDBACK / CRITICAL INSTRUCTION]"
+        elif role.lower() == "manager":
+            tag = "[COORDINATOR DECISION]"
+        else:
+            tag = f"[{role} OUTPUT]"
+            
+        context_parts.append(f"{tag}:\n{content}")
 
-    final_prompt = f"{context_block}\nNew message for you:\n[user/manager]: {prompt}"
+    context_parts.append("=== END OF PREVIOUS CONTEXT ===")
+    context_block = "\n\n".join(context_parts)
+
+    final_prompt = (
+        f"{context_block}\n\n"
+        "NEW INSTRUCTION FOR YOU:\n"
+        f"[from Manager/User]: {prompt}"
+    )
     return final_prompt, True
 
 

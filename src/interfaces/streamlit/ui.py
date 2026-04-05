@@ -672,6 +672,8 @@ if "clear_composer_prompt" not in st.session_state:
     st.session_state.clear_composer_prompt = False
 if "show_audit" not in st.session_state:
     st.session_state.show_audit = False
+if "active_workflow" not in st.session_state:
+    st.session_state.active_workflow = "Plan"
 if "browser_path" not in st.session_state:
     st.session_state.browser_path = os.path.expanduser("~")
 
@@ -880,17 +882,34 @@ with st.container(border=True):
             st.session_state.extra_context_pasted = pasted
 
     with input_toolbar_mid:
-        if mode_options:
-            selected_mode = st.selectbox(
-                "Mode",
-                options=mode_options,
-                index=mode_options.index(st.session_state.active_mode),
+        col_wf, col_md = st.columns([1, 1.2])
+        with col_wf:
+            selected_workflow = st.selectbox(
+                "Workflow",
+                options=["Plan", "Execute"],
+                index=0 if st.session_state.active_workflow == "Plan" else 1,
                 label_visibility="collapsed",
-                key="mode_selector",
+                key="workflow_selector",
             )
-            st.session_state.active_mode = selected_mode
-        else:
-            st.caption("No modes available")
+            if selected_workflow != st.session_state.active_workflow:
+                st.session_state.active_workflow = selected_workflow
+                # Notification if Execute without history
+                if selected_workflow == "Execute" and not st.session_state.messages:
+                    st.toast("⚠️ Careful: Executing without a prior plan may lead to undesired results.", icon="⚠️")
+                st.rerun()
+
+        with col_md:
+            if mode_options:
+                selected_mode = st.selectbox(
+                    "Mode",
+                    options=mode_options,
+                    index=mode_options.index(st.session_state.active_mode),
+                    label_visibility="collapsed",
+                    key="mode_selector",
+                )
+                st.session_state.active_mode = selected_mode
+            else:
+                st.caption("No modes available")
 
     prompt = st.text_area(
         "Prompt",
@@ -945,6 +964,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             st.session_state.session_id,
             final_prompt,
             mode=st.session_state.active_mode,
+            workflow=st.session_state.active_workflow,
         )
         st.balloons()
         st.success("Task completed.")
