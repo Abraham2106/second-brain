@@ -7,7 +7,7 @@ import unicodedata
 from typing import Optional, List
 from colorama import Fore, Style
 from src.core.agent_protocols import AI_Agent
-from src.prompts.prompts import MANAGER_PROMPT, PLANNER_PROMPT, BUILDER_PROMPT, CRITIC_PROMPT, RESEARCHER_PROMPT
+from src.prompts.prompts import MANAGER_PROMPT, PLANNER_PROMPT, BUILDER_PROMPT, CRITIC_PROMPT, RESEARCHER_PROMPT, SUMMARIZER_PROMPT
 from src.infrastructure.execution.executor import (
     write_file_tool,
     execute_command,
@@ -39,6 +39,7 @@ class Orchestrator:
         self.researcher = AI_Agent("Researcher", RESEARCHER_PROMPT)
         self.builder = AI_Agent("Builder", BUILDER_PROMPT)
         self.critic = AI_Agent("Critic", CRITIC_PROMPT)
+        self.summarizer = AI_Agent("Summarizer", SUMMARIZER_PROMPT)
         self.history = []
 
     def _extract_plan_of_record(self, task_id: str) -> str:
@@ -48,7 +49,7 @@ class Orchestrator:
         # Search backwards for the latest Planner output
         for msg in reversed(raw):
             if msg["agent_name"].lower() == "planner":
-                return f"\n=== PLAN OF RECORD (from previous planning turn) ===\n{msg['parts'][0]}\n"
+                return f"\n=== PLAN OF RECORD (from previous planning turn) ===\n{msg['parts'][0][:5000]}... (summary continues)\n"
         return ""
 
     def _extract_user_feedback(self, task_id: str) -> str:
@@ -141,7 +142,7 @@ class Orchestrator:
     #   vault_file, vault_asset, vault_folder, patch_vault_file,
     #   delete_vault_file, filepath
     _BLOCK_HEADER_RE = re.compile(
-        r"^#\s*"
+        r"^\s*#\s*"
         r"(?:"
         r"(?P<vault_file>[vV]ault[\s\-_]*[fF]ile)|"
         r"(?P<vault_asset>[vV]ault[\s\-_]*[aA]sset)|"
@@ -169,7 +170,7 @@ class Orchestrator:
         current_lines: list[str] = []
 
         for line in lines:
-            m = self._BLOCK_HEADER_RE.match(line)
+            m = self._BLOCK_HEADER_RE.search(line)
             if m:
                 # Save the previous block
                 if current is not None:
@@ -446,7 +447,7 @@ class Orchestrator:
 
         if min_folders == 0:
             if re.search(r"\b(?:crea|crear|cree|genera|generar|haz|hacer|arma)\b[^.\n]{0,50}\b(?:carpetas|folders|directorios)\b", normalized):
-                min_folders = 2
+                min_folders = 1
             elif re.search(r"\b(?:crea|crear|cree|genera|generar|haz|hacer|arma)\b[^.\n]{0,50}\b(?:carpeta|folder|directorio)\b", normalized):
                 min_folders = 1
 
@@ -506,9 +507,9 @@ class Orchestrator:
             reasons.append(
                 f"The request implies at least {expected['min_notes']} separate markdown notes, but the output only contains {actual['notes']}."
             )
-        if expected["min_folders"] > actual["folders"]:
+        if expected["min_folders"] > 0 and actual["folders"] == 0:
             reasons.append(
-                f"The request implies at least {expected['min_folders']} folder directives, but the output only contains {actual['folders']}."
+                f"The request implies folder creation, but the output contains 0 folder directives."
             )
         if expected["force_markdown"] and actual["non_md_note_paths"] > 0:
             reasons.append("Every note path must end in .md when the user explicitly asks for markdown notes.")
@@ -628,7 +629,18 @@ class Orchestrator:
             print(f"{Fore.MAGENTA}[Manager]{Style.RESET_ALL} calls {Fore.YELLOW}{next_agent_name}{Style.RESET_ALL}: {instruction}\n")
             
             if next_agent_name.lower() == "user":
-                print(f"\n{Fore.GREEN}[Task finished]{Style.RESET_ALL} {instruction}")
+                self.callback.on_agent_start("Summarizer", "Finalizando reporte...")
+                # We update the summarizer persona using the current mode too
+                summarizer_instruction = with_language_context(
+                    PERSONAS.get("Summarizer", {}).get("instruction", SUMMARIZER_PROMPT),
+                    prompt
+                )
+                self.summarizer.update_system_prompt(summarizer_instruction)
+                
+                # Execute summarizer over the manager's instruction (which holds the report)
+                final_report = self.summarizer.execute(task_id, instruction)
+                self.callback.on_agent_end("Summarizer", final_report)
+                print(f"\n{Fore.GREEN}[Task finished]{Style.RESET_ALL} {final_report}")
                 break
                 
             # 2. Llamada dinámica a los agentes

@@ -28,6 +28,7 @@ def init_db():
             name TEXT NOT NULL,
             type TEXT NOT NULL, -- 'file' o 'folder'
             content TEXT, -- Contenido para búsqueda profunda
+            last_modified REAL, -- mtime for incremental sync
             last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')

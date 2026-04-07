@@ -83,10 +83,10 @@ def sync_vault(vault_path: str):
             full_path = os.path.join(root, d)
             rel_path = os.path.relpath(full_path, vault_path).replace('\\', '/')
             cursor.execute('''
-                INSERT INTO vault_nodes (path, name, type)
-                VALUES (?, ?, ?)
+                INSERT INTO vault_nodes (path, name, type, last_modified)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT(path) DO UPDATE SET last_seen=CURRENT_TIMESTAMP
-            ''', (rel_path, d, 'folder'))
+            ''', (rel_path, d, 'folder', None))
 
         for f in files:
             full_path = os.path.join(root, f)
@@ -107,14 +107,28 @@ def sync_node(vault_base: str, rel_path: str, cursor):
     content = ""
     
     if ntype == 'file':
+        # Incremental sync check
+        mtime = os.path.getmtime(full_path)
+        cursor.execute("SELECT last_modified FROM vault_nodes WHERE path = ?", (rel_path,))
+        row = cursor.fetchone()
+        if row and row[0] == mtime:
+            # File hasn't changed, just update last_seen
+            cursor.execute("UPDATE vault_nodes SET last_seen = CURRENT_TIMESTAMP WHERE path = ?", (rel_path,))
+            return
+
         if _should_read_content(rel_path):
             content = _read_text_file(full_path, rel_path)
+    else:
+        mtime = None
 
     cursor.execute('''
-        INSERT INTO vault_nodes (path, name, type, content)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(path) DO UPDATE SET content=excluded.content, last_seen=CURRENT_TIMESTAMP
-    ''', (rel_path, name, ntype, content))
+        INSERT INTO vault_nodes (path, name, type, content, last_modified)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET 
+            content=excluded.content, 
+            last_modified=excluded.last_modified,
+            last_seen=CURRENT_TIMESTAMP
+    ''', (rel_path, name, ntype, content, mtime))
 
     if ntype == 'file' and rel_path.lower().endswith('.md') and content:
         extract_links(rel_path, content, cursor)

@@ -27,6 +27,9 @@ def _build_prompt_with_history(task_id: str, prompt: str) -> Tuple[str, bool]:
             tag = "[USER FEEDBACK / CRITICAL INSTRUCTION]"
         elif role.lower() == "manager":
             tag = "[COORDINATOR DECISION]"
+        elif role.lower().endswith("_instruction"):
+            agent_name = role.split("_")[0].capitalize()
+            tag = f"[INSTRUCTION TO {agent_name}]"
         else:
             tag = f"[{role} OUTPUT]"
             
@@ -99,8 +102,16 @@ class AI_Agent:
             log.exception(f"HTTP Request failed on {settings.gemini_proxy_url}: {str(e)}")
             raise GeminiRequestFailed(f"Proxy connection error: {str(e)}") from e
 
-        if not has_history:
-            save_message(task_id, "user", prompt)
+        # 🧠 Structured Memory: Save the input and output for every turn
+        if prompt:
+            # Distinguish between Manager calls from User and Manager calls to other agents
+            if self.name.lower() == "manager":
+                role_to_save = "user" # The Manager's input is always the User/Task prompt
+            else:
+                # The input to any other agent is an instruction from the Manager
+                role_to_save = f"{self.name}_instruction"
+            
+            save_message(task_id, role_to_save, prompt)
 
         save_message(task_id, self.name, output)
         return output

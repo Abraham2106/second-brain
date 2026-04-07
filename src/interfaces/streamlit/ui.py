@@ -1,21 +1,23 @@
 import os
 import sys
-
-# Ensure the project root is in the Python path so that 'src' can be found.
-_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
-
 import json
 import sqlite3
 import time
 import uuid
 import hashlib
 import traceback
+import threading
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 import streamlit as st
+from streamlit.runtime.scriptrunner import add_script_run_ctx
+
+# Ensure the project root is in the Python path
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from src.core.callbacks import BaseCallback
 from src.infrastructure.config.config import get_settings, set_obsidian_vault_path
@@ -33,944 +35,798 @@ apply_streamlit_shutdown_patch()
 # Page config
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Second Brain — AI Team",
+    page_title="Second Brain — Claude",
     page_icon="◈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Design system — Editorial warm-dark
+# Theme State
 # ─────────────────────────────────────────────────────────────────────────────
-st.markdown(
-    """
+if "theme_mode" not in st.session_state:
+    st.session_state.theme_mode = "light"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Design system — Claude Editorial (Dynamic)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def inject_custom_css(mode: str):
+    # ── Parchment (Light) vs Near Black (Dark) ──────────────────────────────
+    is_light = mode == "light"
+
+    bg_page       = "#f5f4ed" if is_light else "#141413"
+    bg_card       = "#faf9f5" if is_light else "#1e1e1c"
+    bg_popover    = "#ffffff" if is_light else "#252523"
+    bg_sidebar    = "#e8e6dc" if is_light else "#141413"
+    bg_input      = "#ffffff" if is_light else "#252523"
+
+    text_primary  = "#141413" if is_light else "#faf9f5"
+    text_secondary= "#5e5d59" if is_light else "#87867f"
+    text_light    = "#faf9f5"  # for use on dark surfaces
+
+    border_color  = "#e8e6dc" if is_light else "#30302e"
+    accent        = "#c96442"
+    ring_warm     = "#d1cfc5" if is_light else "#4d4c48"
+    warm_sand     = "#e8e6dc" if is_light else "#2a2a28"
+    charcoal_warm = "#4d4c48" if is_light else "#b0aea5"
+
+    st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap');
 
-:root {
-    --canvas:   #0c0c0c;
-    --surface:  #171717;
-    --surface2: #1f1f1f;
-    --border:   #2a2a2a;
-    --border-l: #363636;
-    --text-1:   #e8e4de;
-    --text-2:   #8a857e;
-    --text-3:   #5c5850;
-    --accent:   #d4a853;
-    --accent-m: rgba(212, 168, 83, 0.10);
-    --accent-s: rgba(212, 168, 83, 0.22);
-    --green:    #5cb87a;
-    --red:      #d45555;
-    --amber:    #d4a853;
-}
+/* ── CSS Tokens ─────────────────────────────────────────────────────── */
+:root {{
+    --bg-page:      {bg_page};
+    --bg-card:      {bg_card};
+    --bg-popover:   {bg_popover};
+    --bg-input:     {bg_input};
+    --text-primary: {text_primary};
+    --text-secondary:{text_secondary};
+    --border-color: {border_color};
+    --accent:       {accent};
+    --ring-warm:    {ring_warm};
+    --warm-sand:    {warm_sand};
+    --charcoal-warm:{charcoal_warm};
+    --font-serif: 'Source Serif 4', Georgia, serif;
+    --font-sans:  system-ui, Arial, sans-serif;
+    --font-mono:  'IBM Plex Mono', monospace;
+}}
 
-html, body, [class*="css"] {
-    font-family: 'DM Sans', sans-serif;
-    color: var(--text-1);
-}
+/* ── Global Canvas ──────────────────────────────────────────────────── */
+.stApp, .stApp > div, .main, .block-container {{
+    background-color: {bg_page} !important;
+    color: {text_primary} !important;
+    font-family: var(--font-sans);
+}}
 
-code, pre, .stCodeBlock, [data-testid="stCodeBlock"] {
-    font-family: 'IBM Plex Mono', monospace !important;
-}
+header[data-testid="stHeader"] {{
+    background-color: {bg_page} !important;
+    border-bottom: 1px solid {border_color} !important;
+}}
 
-/* ── App canvas ────────────────────────────────────────────────────── */
-.stApp {
-    background: var(--canvas);
-}
+/* ── Sidebar (Always Dark) ──────────────────────────────────────────── */
+section[data-testid="stSidebar"],
+section[data-testid="stSidebar"] > div {{
+    background-color: {bg_sidebar} !important;
+}}
 
-[data-testid="stMainBlockContainer"] {
-    padding-bottom: 0.5rem !important;
-    padding-top: 1.2rem !important;
-}
+section[data-testid="stSidebar"] * {{
+    color: {("#141413" if is_light else "#faf9f5")} !important;
+}}
 
-/* ── Sidebar ───────────────────────────────────────────────────────── */
-section[data-testid="stSidebar"] {
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-}
+/* Extra specific for headings and captions in sidebar */
+section[data-testid="stSidebar"] h1, 
+section[data-testid="stSidebar"] h2, 
+section[data-testid="stSidebar"] h3, 
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] small,
+section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] p {{
+    color: {("#141413" if is_light else "#faf9f5")} !important;
+    opacity: 1 !important;
+}}
 
-section[data-testid="stSidebar"] [data-testid="stMarkdown"] p {
-    color: var(--text-2);
-    font-size: 0.88rem;
-}
-
-/* ── Chat messages ─────────────────────────────────────────────────── */
-.stChatMessage {
-    background: var(--surface) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 12px !important;
-    margin-bottom: 10px !important;
-    padding: 1rem 1.15rem !important;
-}
-
-/* ── Buttons — refined, not chunky ─────────────────────────────────── */
-.stButton > button {
-    font-family: 'DM Sans', sans-serif !important;
-    font-size: 0.84rem !important;
-    font-weight: 500 !important;
+section[data-testid="stSidebar"] .stButton > button {{
+    background: {("#ffffff" if is_light else "#262624")} !important;
+    color: {("#141413" if is_light else "#faf9f5")} !important;
+    border: 1px solid {("#e8e6dc" if is_light else "#30302e")} !important;
     border-radius: 8px !important;
-    padding: 0.5rem 1rem !important;
-    border: 1px solid var(--border) !important;
-    background: transparent !important;
-    color: var(--text-2) !important;
-    transition: all 0.15s ease;
-    text-align: center !important;
-}
+    box-shadow: {("0 1px 2px rgba(0,0,0,0.05)" if is_light else "none")} !important;
+    transition: all 0.15s ease !important;
+    font-weight: 500 !important;
+    text-align: left !important;
+    padding-left: 12px !important;
+}}
 
-.stButton > button:hover {
-    color: var(--accent) !important;
-    border-color: var(--accent-s) !important;
-    background: var(--accent-m) !important;
-}
+section[data-testid="stSidebar"] .stButton > button:hover {{
+    background: {("#f5f4ed" if is_light else "#2d2d2b")} !important;
+    border-color: {accent} !important;
+    color: {accent} !important;
+    box-shadow: {("0 2px 4px rgba(0,0,0,0.08)" if is_light else "none")} !important;
+}}
 
-.stButton > button[kind="primary"] {
-    background: var(--accent) !important;
-    color: #0c0c0c !important;
-    border-color: var(--accent) !important;
+/* ── Typography  ──────────────────────────────────────────────────── */
+h1, h2, h3 {{
+    font-family: var(--font-serif) !important;
+    font-weight: 500 !important;
+    color: {text_primary} !important;
+    line-height: 1.25 !important;
+}}
+
+/* ── Main Area All Text ────────────────────────────────────────────── */
+.main label,
+.main p,
+.main span,
+.main small,
+.main .stCaption,
+.stMarkdown, .stMarkdown * {{
+    color: {text_primary} !important;
+}}
+
+/* Force non-sidebar text */
+.stApp *:not(section[data-testid="stSidebar"] *) {{
+    color: {text_primary};
+}}
+
+/* Force override colors on sidebar */
+section[data-testid="stSidebar"] * {{
+    color: {("#141413" if is_light else "#faf9f5")} !important;
+}}
+
+/* ── Buttons: All Non-Sidebar ─────────────────────────────────────── */
+.stButton > button {{
+    background: {warm_sand} !important;
+    color: {charcoal_warm} !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 8px 18px !important;
     font-weight: 600 !important;
-}
+    box-shadow: {ring_warm} 0px 0px 0px 1px !important;
+    transition: all 0.15s ease !important;
+    font-size: 0.9rem !important;
+}}
 
-.stButton > button[kind="primary"]:hover {
-    background: #c49a48 !important;
-    border-color: #c49a48 !important;
-}
+.stButton > button:hover {{
+    background: {warm_sand} !important;
+    box-shadow: {accent} 0px 0px 0px 1px !important;
+    color: {accent} !important;
+}}
 
-/* ── Inputs ─────────────────────────────────────────────────────────── */
+/* Sidebar buttons dynamic matching */
+section[data-testid="stSidebar"] .stButton > button {{
+    background: {("#faf9f5" if is_light else "#262624")} !important;
+    color: {("#141413" if is_light else "#faf9f5")} !important;
+    border: 1px solid {("#d1cfc5" if is_light else "#30302e")} !important;
+    box-shadow: none !important;
+    font-weight: 500 !important;
+}}
+
+section[data-testid="stSidebar"] .stButton > button:hover {{
+    border-color: {accent} !important;
+    color: {accent} !important;
+    background: {("#ffffff" if is_light else "#262624")} !important;
+}}
+
+/* Popover trigger button ─────────────────────────────────────────── */
+div[data-testid="stPopover"] button {{
+    background: {warm_sand} !important;
+    color: {charcoal_warm} !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 8px 18px !important;
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+    box-shadow: {ring_warm} 0px 0px 0px 1px !important;
+    transition: all 0.15s ease !important;
+}}
+
+div[data-testid="stPopover"] button:hover {{
+    box-shadow: {accent} 0px 0px 0px 1px !important;
+    color: {accent} !important;
+}}
+
+/* ── Text Inputs ──────────────────────────────────────────────────── */
 div[data-testid="stTextArea"] textarea,
-div[data-testid="stTextInput"] input {
-    font-family: 'DM Sans', sans-serif !important;
-    background: var(--surface) !important;
-    border: 1px solid var(--border) !important;
-    color: var(--text-1) !important;
+div[data-testid="stTextInput"] input,
+div[data-testid="stNumberInput"] input {{
+    background: {bg_input} !important;
+    color: {text_primary} !important;
+    border: 1px solid {border_color} !important;
     border-radius: 10px !important;
-    font-size: 0.95rem !important;
-}
+}}
 
 div[data-testid="stTextArea"] textarea:focus,
-div[data-testid="stTextInput"] input:focus {
-    border-color: var(--accent-s) !important;
-    box-shadow: 0 0 0 1px var(--accent-m) !important;
-}
+div[data-testid="stTextInput"] input:focus {{
+    border-color: var(--focus-blue) !important;
+    box-shadow: 0 0 0 1px var(--focus-blue) !important;
+}}
 
-div[data-testid="stTextArea"] textarea::placeholder,
-div[data-testid="stTextInput"] input::placeholder {
-    color: var(--text-3) !important;
-}
+/* Placeholder Contrast */
+::placeholder {{
+    color: {("#5e5d59" if mode == "light" else "#87867f")} !important;
+    opacity: 1 !important;
+}}
 
-/* ── Selectbox ─────────────────────────────────────────────────────── */
-div[data-baseweb="select"] > div {
-    background: var(--surface) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
-}
+/* ── Selectbox ───────────────────────────────────────────────────── */
+div[data-testid="stSelectbox"] > div > div > div,
+div[data-testid="stSelectbox"] > label {{
+    color: {text_primary} !important;
+}}
 
-div[data-baseweb="select"] * {
-    color: var(--text-1) !important;
-    font-family: 'DM Sans', sans-serif !important;
-}
-
-/* ── Status widget ─────────────────────────────────────────────────── */
-div[data-testid="stStatus"] {
-    background: var(--surface) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
-}
-
-/* ── Expander ──────────────────────────────────────────────────────── */
-div[data-testid="stExpander"] {
-    background: var(--surface) !important;
-    border: 1px solid var(--border) !important;
+div[data-testid="stSelectbox"] > div[data-baseweb="select"] > div {{
+    background: {bg_input} !important;
+    border: 1px solid {border_color} !important;
     border-radius: 10px !important;
-}
+    color: {text_primary} !important;
+}}
 
-/* ── Agent output panels ───────────────────────────────────────────── */
-.agent-card {
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 0.85rem 1rem;
-    background: var(--surface2);
-    margin-top: 0.3rem;
-}
+/* ── Popover & Dropdown Panels ───────────────────────────────────── */
+div[data-baseweb="popover"],
+div[data-baseweb="popover"] > div,
+div[data-baseweb="menu"],
+div[data-baseweb="select"] div[role="listbox"],
+ul[role="listbox"],
+ul[data-baseweb="menu"] {{
+    background: {bg_popover} !important;
+    border: 1px solid {border_color} !important;
+    border-radius: 10px !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,{'0.08' if is_light else '0.4'}) !important;
+}}
 
-.agent-card-role {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--accent);
-    margin-bottom: 0.35rem;
-}
+div[data-baseweb="popover"] *,
+div[data-baseweb="menu"] *,
+div[role="listbox"] *,
+ul[role="listbox"] *,
+ul[role="listbox"] li {{
+    background: transparent !important;
+    color: {text_primary} !important;
+}}
 
-.agent-card-body {
-    font-family: 'Source Serif 4', serif;
-    color: var(--text-1);
-    line-height: 1.6;
-    font-size: 0.95rem;
-}
+li[data-baseweb="menu-item"]:hover {{
+    background: {warm_sand} !important;
+}}
 
-.agent-tag {
-    display: inline-block;
-    padding: 0.12rem 0.5rem;
-    margin-bottom: 0.4rem;
-    border-radius: 4px;
-    background: var(--accent-m);
-    border: 1px solid var(--accent-s);
-    color: var(--accent);
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.72rem;
-    letter-spacing: 0.03em;
-}
+/* ── Stacked container (popover wrapper) ─────────────────────────── */
+[data-testid="stPopover"] > div:last-child,
+[data-testid="stPopover"] > div:last-child * {{
+    background: {bg_popover} !important;
+    color: {text_primary} !important;
+}}
 
-/* ── Vault launcher ────────────────────────────────────────────────── */
-.vault-hero {
-    max-width: 720px;
-    margin: 8vh auto 0 auto;
-    text-align: center;
-}
+/* ── Chat Messages ───────────────────────────────────────────────── */
+.stChatMessage {{
+    background: {bg_card} !important;
+    border: 1px solid {border_color} !important;
+    border-radius: 12px !important;
+    margin-bottom: 10px !important;
+}}
 
-.vault-hero h1 {
-    font-family: 'Source Serif 4', serif;
-    font-size: 2.2rem;
-    font-weight: 600;
-    color: var(--text-1);
-    margin-bottom: 0.3rem;
-}
+.stChatMessage * {{
+    color: {text_primary} !important;
+}}
 
-.vault-hero p {
-    font-size: 0.92rem;
-    color: var(--text-2);
-    max-width: 480px;
-    margin: 0 auto 1.5rem;
-    line-height: 1.55;
-}
+/* ── Tabs ────────────────────────────────────────────────────────── */
+div[data-baseweb="tab-list"] {{
+    background: transparent !important;
+    gap: 24px;
+}}
 
-.vault-hero .kicker {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    color: var(--accent);
-    margin-bottom: 0.5rem;
-}
+div[data-baseweb="tab"] {{
+    background: transparent !important;
+    color: {text_secondary} !important;
+    border-bottom: 2px solid transparent !important;
+}}
 
-/* ── Vault cards ───────────────────────────────────────────────────── */
-.vault-card {
+div[aria-selected="true"][data-baseweb="tab"] {{
+    border-bottom: 2px solid {accent} !important;
+    color: {accent} !important;
+}}
+
+/* ── Agent Cards ─────────────────────────────────────────────────── */
+.agent-card {{
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    background: {bg_card};
+    border: 1px solid {border_color} !important;
+    margin: 8px 0 !important;
+    width: 100% !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,{'0.03' if is_light else '0.15'});
+    text-align: left !important;
+    min-height: 48px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0.8rem 1rem;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface);
-    margin-bottom: 0.5rem;
-    transition: border-color 0.15s ease;
-}
+}}
 
-.vault-card:hover {
-    border-color: var(--border-l);
-}
-
-.vault-card.active {
-    border-color: var(--accent-s);
-    background: var(--accent-m);
-}
-
-.vault-card .name {
-    font-weight: 600;
-    font-size: 0.95rem;
-    color: var(--text-1);
-}
-
-.vault-card .meta {
-    font-size: 0.76rem;
-    color: var(--text-3);
-    font-family: 'IBM Plex Mono', monospace;
-    margin-top: 0.15rem;
-}
-
-/* ── Welcome empty state ───────────────────────────────────────────── */
-.welcome-state {
-    text-align: center;
-    padding: 6rem 2rem 4rem;
-}
-
-.welcome-state .glyph {
-    font-size: 2.8rem;
-    margin-bottom: 0.6rem;
-    opacity: 0.4;
-}
-
-.welcome-state h2 {
-    font-family: 'Source Serif 4', serif;
-    font-size: 1.35rem;
-    font-weight: 600;
-    color: var(--text-2);
-    margin-bottom: 0.25rem;
-}
-
-.welcome-state p {
-    font-size: 0.85rem;
-    color: var(--text-3);
-}
-
-/* ── Audit table ───────────────────────────────────────────────────── */
-.audit-row {
-    display: flex;
-    align-items: baseline;
-    gap: 0.6rem;
-    padding: 0.55rem 0;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.84rem;
-}
-
-.audit-row .ts {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.74rem;
-    color: var(--text-3);
-    white-space: nowrap;
-}
-
-.audit-row .agent {
-    font-weight: 600;
-    color: var(--text-1);
-    white-space: nowrap;
-}
-
-.audit-row .file {
-    font-family: 'IBM Plex Mono', monospace;
-    color: var(--text-2);
-    font-size: 0.78rem;
-}
-
-.audit-status {
-    display: inline-block;
-    padding: 0.1rem 0.4rem;
-    border-radius: 4px;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem;
+.agent-card-role {{
+    font-size: 0.85rem !important;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
+    letter-spacing: 0.05em;
+    color: {accent} !important;
+    font-family: var(--font-sans);
+    font-weight: 600 !important;
+    text-align: left !important;
+}}
 
-.audit-status.applied { background: rgba(92,184,122,0.12); color: var(--green); }
-.audit-status.conflict { background: rgba(212,85,85,0.12); color: var(--red); }
-.audit-status.deleted { background: rgba(212,168,83,0.12); color: var(--amber); }
+.agent-tag {{
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+    background: rgba(201, 100, 66, 0.08);
+    border: 1px solid rgba(201, 100, 66, 0.2);
+    color: {accent};
+    font-size: 0.75rem;
+    margin-bottom: 0.75rem;
+}}
 
-/* ── Hide Streamlit chrome ─────────────────────────────────────────── */
-div[data-testid="stTextArea"] label,
-div[data-testid="stSelectbox"] label {
-    display: none !important;
-}
+/* ── Address Badges ─────────────────────────────────────────────── */
+.address-badge, 
+section[data-testid="stSidebar"] .address-badge {{
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 0.75rem !important;
+    background: {("#faf9f5" if is_light else "#1f1f1e")} !important;
+    color: {("#141413" if is_light else "#faf9f5")} !important;
+    padding: 0.2rem 0.6rem !important;
+    border-radius: 6px !important;
+    border: 1px solid var(--border-warm) !important;
+    display: inline-block !important;
+    word-break: break-all !important;
+    font-weight: 500 !important;
+    margin-top: 0.25rem;
+}}
 
-/* ── Dividers ──────────────────────────────────────────────────────── */
-hr {
-    border: none;
-    border-top: 1px solid var(--border);
-    margin: 0.6rem 0;
-}
+/* ── Primary Buttons ─────────────────────────────────────────────── */
+button[kind="primary"],
+div[data-testid="stFormSubmitButton"] button {{
+    background: {accent} !important;
+    color: #faf9f5 !important;
+    border-radius: 10px !important;
+    border: none !important;
+}}
+
+/* ── Dividers ────────────────────────────────────────────────────── */
+hr {{
+    border-color: {border_color} !important;
+}}
+
+/* ── Info / Alert Boxes ──────────────────────────────────────────── */
+div[data-testid="stInfoBox"] {{
+    background: {bg_card} !important;
+    border-color: {border_color} !important;
+    color: {text_primary} !important;
+}}
+
+/* ── Expanders ───────────────────────────────────────────────────── */
+div[data-testid="stExpander"] {{
+    background: {bg_card} !important;
+    border: 1px solid {border_color} !important;
+    border-radius: 8px !important;
+}}
+
+div[data-testid="stExpander"] details summary {{
+    color: {text_primary} !important;
+    background: {bg_card} !important;
+}}
+
+div[data-testid="stExpander"] details summary:hover {{
+    color: {accent} !important;
+}}
+
+div[data-testid="stExpander"] > div[role="region"] {{
+    background: {bg_card} !important;
+    color: {text_primary} !important;
+}}
+
+/* ── Code Blocks (Force Theme Match) ────────────────────────────── */
+code {{
+    background: {("#f5f4ed" if is_light else "#2d2d2b")} !important;
+    color: {("#c96442" if is_light else "#e8e6dc")} !important;
+    padding: 0.2rem 0.4rem !important;
+    border-radius: 4px !important;
+}}
+
+pre, [data-testid="stCode"] {{
+    background: {("#f8f7f2" if is_light else "#1a1a19")} !important;
+    border: 1px solid {border_color} !important;
+    border-radius: 8px !important;
+}}
+
+[data-testid="stCode"] * {{
+    background: transparent !important;
+}}
+
+/* ── Minimalist Loader ────────────────────────────────────────────── */
+.minimal-loader-container {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 1rem 0;
+    color: {text_secondary};
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+}}
+
+.dots-loader {{
+    display: flex;
+    gap: 4px;
+}}
+
+.dot {{
+    width: 5px;
+    height: 5px;
+    background-color: {text_secondary};
+    border-radius: 50%;
+    animation: dot-pulse 1.4s infinite ease-in-out;
+}}
+.dot:nth-child(2) {{ animation-delay: 0.2s; }}
+.dot:nth-child(3) {{ animation-delay: 0.4s; }}
+
+@keyframes dot-pulse {{
+    0%, 80%, 100% {{ transform: scale(0.6); opacity: 0.3; }}
+    40% {{ transform: scale(1.1); opacity: 0.8; }}
+}}
+
+.loader-timer {{
+    font-family: var(--font-mono);
+    opacity: 0.6;
+    font-size: 0.75rem;
+}}
+
+/* ── Result States ───────────────────────────────────────────────── */
+.success-banner {{
+    background: rgba(46, 125, 50, 0.05);
+    border: 1px solid rgba(46, 125, 50, 0.2);
+    color: #2e7d32;
+    padding: 1rem;
+    border-radius: 10px;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+}}
+
+.refinement-box {{
+    background: rgba(2, 136, 209, 0.05);
+    border: 1px solid rgba(2, 136, 209, 0.2);
+    color: #0288d1;
+    padding: 1rem;
+    border-radius: 10px;
+    margin: 1rem 0;
+}}
+
+.refinement-box ul {{
+    margin: 0.5rem 0 0 1.25rem;
+    padding: 0;
+}}
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _try_parse_json(raw_text: str):
-    try:
-        return json.loads(raw_text)
-    except Exception:
-        return None
-
-
-def _format_agent_result(agent_name: str, raw_text: str) -> dict:
-    parsed = _try_parse_json(raw_text) if isinstance(raw_text, str) else None
-
-    if agent_name == "Manager" and isinstance(parsed, dict):
-        next_agent = parsed.get("next_agent")
-        instruction = parsed.get("instruction")
-        if isinstance(next_agent, str) and isinstance(instruction, str):
-            title = "Coordinator Decision"
-            if next_agent.lower() == "user":
-                title = "Final Result"
-            body = (
-                f'<div class="agent-tag">Next → {next_agent}</div>'
-                f'<div class="agent-card-body">{instruction}</div>'
-            )
-            return {"title": title, "body_html": body, "show_raw": True}
-
-    if agent_name == "Critic" and "CRITIC_APPROVED" in raw_text:
-        body = (
-            '<div class="agent-tag">Approved</div>'
-            '<div class="agent-card-body">Quality review passed. Workflow can close.</div>'
-        )
-        return {"title": "Quality Gate", "body_html": body, "show_raw": True}
-
-    if isinstance(parsed, list) and parsed and all(isinstance(item, dict) for item in parsed):
-        list_items = "".join(
-            f"<li><strong>{item.get('next_agent', 'Step')}</strong>: {item.get('instruction', '')}</li>"
-            for item in parsed
-        )
-        body = f'<div class="agent-card-body"><ul>{list_items}</ul></div>'
-        return {"title": f"{agent_name} Output", "body_html": body, "show_raw": True}
-
-    safe_text = raw_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
-    return {
-        "title": f"{agent_name}",
-        "body_html": f'<div class="agent-card-body">{safe_text}</div>',
-        "show_raw": False,
-    }
-
-
-def render_agent_output(agent_name: str, raw_text: str):
-    view = _format_agent_result(agent_name, raw_text)
-    st.markdown(
-        f"""
-<div class="agent-card">
-  <div class="agent-card-role">{view['title']}</div>
-  {view['body_html']}
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-    if view["show_raw"]:
-        with st.expander("Raw output", expanded=False):
-            st.code(raw_text, language="json")
-
-
-class StreamlitCallback(BaseCallback):
-    def __init__(self, agent_status_placeholders):
-        self.placeholders = agent_status_placeholders
-
-    def on_agent_start(self, agent_name: str, instruction: str):
-        if agent_name in self.placeholders:
-            self.placeholders[agent_name].update(label=f"● {agent_name} — working…", state="running")
-            with st.session_state.chat_history_container:
-                with st.chat_message("assistant"):
-                    st.caption(f"**{agent_name}** received instruction:")
-                    st.info(instruction)
-
-    def on_agent_end(self, agent_name: str, result: str):
-        if agent_name in self.placeholders:
-            self.placeholders[agent_name].update(label=f"✓ {agent_name} — done", state="complete")
-            with st.session_state.chat_history_container:
-                with st.chat_message("assistant"):
-                    render_agent_output(agent_name, result)
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "agent": agent_name,
-                    "content": result,
-                }
-            )
-
-    def on_system_message(self, message: str, mtype: str = "info"):
-        st.toast(message)
-
+inject_custom_css(st.session_state.theme_mode)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Vault helpers
+# Helpers & Cache
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _vault_name_from_path(path: str | None) -> str | None:
-    if not path:
-        return None
-    clean = path.rstrip("/\\")
-    return os.path.basename(clean) or clean
+@st.cache_resource
+def cached_init_db(): init_db()
 
+@st.cache_resource
+def cached_get_settings(): return get_settings()
 
-def get_active_vault_path() -> str | None:
-    return st.session_state.get("active_vault_path")
-
-
-def get_active_vault_name() -> str | None:
-    return st.session_state.get("active_vault_name") or _vault_name_from_path(get_active_vault_path())
-
-
-def activate_vault(vault_path: str) -> str:
-    """Activate and always auto-sync."""
-    normalized = set_obsidian_vault_path(vault_path, persist=True)
-    if not normalized:
-        raise ValueError("Could not activate the selected vault.")
-
-    st.session_state.active_vault_path = normalized
-    st.session_state.active_vault_name = _vault_name_from_path(normalized)
-    st.session_state.selected_note = None
-
-    clear_vault_index()
-    sync_vault(normalized)
-
-    return normalized
-
-
-def resync_active_vault() -> None:
-    active_path = get_active_vault_path()
-    if not active_path:
-        raise ValueError("No active vault.")
-    clear_vault_index()
-    sync_vault(active_path)
-
-
+@st.cache_data(ttl=60)
 def get_vault_data():
     try:
         conn = sqlite3.connect(DB_PATH)
         df = pd.read_sql_query("SELECT name, path, type FROM vault_nodes", conn)
         conn.close()
-        if not df.empty:
-            df["path"] = df["path"].str.replace("\\", "/", regex=False)
+        if not df.empty: df["path"] = df["path"].str.replace("\\", "/", regex=False)
         return df
-    except Exception:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
+def _vault_name_from_path(path: str | None) -> str | None:
+    if not path: return None
+    clean = path.rstrip("/\\")
+    return os.path.basename(clean) or clean
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Vault launcher (full-page)
-# ─────────────────────────────────────────────────────────────────────────────
+def get_active_vault_path(): return st.session_state.get("active_vault_path")
+def get_active_vault_name(): return st.session_state.get("active_vault_name") or _vault_name_from_path(get_active_vault_path())
 
-def render_vault_launcher():
-    active_path = get_active_vault_path()
-    active_name = get_active_vault_name()
+def _try_parse_json(raw_text: str):
+    try: return json.loads(raw_text)
+    except: return None
 
-    st.markdown(
-        """
-<div class="vault-hero">
-  <div class="kicker">Vault Launcher</div>
-  <h1>Choose a workspace</h1>
-  <p>Open an existing Obsidian vault, browse your files, or create a new one.</p>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
+def render_minimal_loader():
+    if not st.session_state.processing_start_time:
+        return
+    
+    elapsed = time.time() - st.session_state.processing_start_time
+    minutes = int(elapsed // 60)
+    seconds = int(elapsed % 60)
+    timer_str = f"{minutes:02d}:{seconds:02d}s"
+    
+    st.markdown(f"""
+        <div class="minimal-loader-container">
+            <div class="dots-loader">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+            <div class="loader-phrase">{st.session_state.loading_phrase}</div>
+            <div class="loader-timer">{timer_str}</div>
+        </div>
+    """, unsafe_allow_html=True)
 
-    _, center, _ = st.columns([1, 1.8, 1])
-    with center:
-        tab_recent, tab_browse, tab_new = st.tabs(["Recent Vaults", "Browse Local", "Create New"])
+def _format_agent_result(agent_name: str, raw_text: str) -> dict:
+    parsed = _try_parse_json(raw_text) if isinstance(raw_text, str) else None
+    
+    # Minimalist status indicators for all agents
+    status_map = {
+        "Manager": "◈ Coordinando",
+        "Planner": "◈ Planificando",
+        "Researcher": "◈ Investigando",
+        "Builder": "◈ Construyendo/Escribiendo",
+        "Standard": "◈ Procesando"
+    }
+    
+    title_prefix = status_map.get(agent_name, f"◈ {agent_name}")
+    
+    if agent_name == "Manager" and isinstance(parsed, dict):
+        next_agent = parsed.get("next_agent")
+        instruction = parsed.get("instruction", "")
         
-        with tab_recent:
-            search = st.text_input(
-                "Search vaults",
-                key="vault_search",
-                placeholder="Filter by name…",
-                label_visibility="collapsed",
-            )
-
-            vaults = list_vaults(active_path=active_path)
-            query = search.strip().lower()
-            filtered = [v for v in vaults if not query or query in v.name.lower() or query in v.path.lower()]
-
-            if filtered:
-                for vault in filtered:
-                    is_active = vault.path == active_path
-                    badge = " · current" if is_active else ""
-                    source = "workspace" if vault.source == "workspace" else "external"
-
-                    col_info, col_btn = st.columns([3.5, 1])
-                    with col_info:
-                        st.markdown(f"**{vault.name}{badge}**")
-                        st.caption(f"`{source}` · `{vault.path}`")
-                    with col_btn:
-                        label = "Continue" if is_active else "Open"
-                        if st.button(label, key=f"open_{vault.path}", use_container_width=True):
-                            with st.spinner(f"Syncing {vault.name}…"):
-                                activate_vault(vault.path)
-                            st.session_state.vault_palette_open = False
-                            st.rerun()
-                    st.divider()
-            else:
-                st.info("No vaults match your search.")
-                
-        with tab_browse:
-            st.markdown("Use the native Windows File Explorer to select an existing folder as your vault.")
+        if next_agent == "User":
+            return {
+                "title": "◈ ¡Todo listo! Revisión requerida",
+                "body_html": f'<div class="success-banner"><strong>Fase finalizada:</strong><br>{instruction[:250]}...</div>',
+                "show_raw": True
+            }
+        
+        # Simplified Natural Language summary for intermediate steps
+        npl_summary = f"El Coordinador ha asignado la siguiente fase a **{next_agent}**." if next_agent else "El Coordinador está procesando la solicitud."
+        
+        return {
+            "title": f"{title_prefix}: {next_agent}" if next_agent else title_prefix,
+            "body_html": f'<div class="agent-card-body">{npl_summary}</div>', 
+            "show_raw": True
+        }
             
-            if st.button("Browse via Windows Explorer...", use_container_width=True):
-                # We use a nested import to avoid slowing down app load or crashing non-desktop environments
-                import tkinter as tk
-                from tkinter import filedialog
-                
-                # Setup a hidden root window for the dialog
-                root = tk.Tk()
-                root.withdraw()
-                # Force the dialog to appear on top of the browser
-                root.wm_attributes('-topmost', 1)
-                
-                folder_path = filedialog.askdirectory(master=root, title="Select Vault Directory")
-                root.destroy()
-                
-                if folder_path:
-                    try:
-                        normalize_path = os.path.abspath(folder_path)
-                        with st.spinner(f"Mounting vault at {normalize_path}…"):
-                            activate_vault(normalize_path)
-                        st.session_state.vault_palette_open = False
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(str(exc))
+    # For other agents, provide a short summary or just the title
+    safe_text = str(raw_text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+    
+    return {
+        "title": title_prefix, 
+        "body_html": f'<div class="agent-card-body">{safe_text}</div>', 
+        "show_raw": False
+    }
 
-        with tab_new:
-            st.markdown("Create a new tracked vault inside the default workspace.")
-            new_name = st.text_input(
-                "Name",
-                key="new_vault_name",
-                placeholder="e.g. Work, Client A, Sandbox",
-                label_visibility="collapsed",
-            )
-            if st.button("Create & open", key="create_vault_btn", use_container_width=True, type="primary"):
-                try:
-                    new_vault = create_vault(new_name)
-                    with st.spinner(f"Creating {new_vault.name}…"):
-                        activate_vault(new_vault.path)
-                    st.session_state.clear_new_vault_name = True
-                    st.session_state.vault_palette_open = False
-                    st.rerun()
-                except Exception as exc:
-                    st.error(str(exc))
-
+def render_agent_output(agent_name: str, raw_text: str):
+    view = _format_agent_result(agent_name, raw_text)
+    
+    # Render the minimalist badge
+    st.markdown(f'<div class="agent-card"><div class="agent-card-role">{view["title"]}</div></div>', unsafe_allow_html=True)
+    
+    # Hide verbose content in a discreet expander
+    if view["body_html"] or view["show_raw"]:
+        with st.expander(f"Ver reporte de {agent_name}"):
+            if view["body_html"]:
+                st.markdown(view["body_html"], unsafe_allow_html=True)
+            if view["show_raw"]:
+                st.code(raw_text, language="json")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Session state init
+# Async Runner
 # ─────────────────────────────────────────────────────────────────────────────
 
-init_db()
-settings = get_settings()
+def _bg_sync_vault(vault_path: str):
+    try:
+        st.session_state.syncing_vault = True
+        sync_vault(vault_path)
+    finally:
+        st.session_state.syncing_vault = False
+        st.session_state.last_sync_ts = datetime.now().strftime("%H:%M:%S")
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "session_id" not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())[:8]
-if "selected_note" not in st.session_state:
+def _run_orchestrator_bg(task_id: str, final_prompt: str, mode: str, workflow: str):
+    try:
+        st.session_state.is_processing = True
+        class BGCallback(BaseCallback):
+            def on_agent_start(self, name, instr):
+                st.session_state.agent_status_updates.append(f"● {name} working...")
+            def on_agent_end(self, name, res):
+                st.session_state.messages.append({"role": "assistant", "agent": name, "content": res})
+                st.session_state.agent_status_updates.append(f"✓ {name} done.")
+            def on_system_message(self, msg, mtype="info"): pass
+        callback = BGCallback()
+        orchestrator = Orchestrator(callback=callback)
+        orchestrator.process_task(task_id, final_prompt, mode=mode, workflow=workflow)
+    except Exception as e:
+        st.session_state.messages.append({"role": "assistant", "content": f"🚨 Error: {e}"})
+    finally:
+        st.session_state.is_processing = False
+
+def activate_vault(vault_path: str):
+    normalized = set_obsidian_vault_path(vault_path, persist=True)
+    if not normalized: return None
+    st.session_state.active_vault_path = normalized
+    st.session_state.active_vault_name = _vault_name_from_path(normalized)
     st.session_state.selected_note = None
+    clear_vault_index()
+    
+    t = threading.Thread(target=_bg_sync_vault, args=(normalized,), daemon=True)
+    add_script_run_ctx(t)
+    t.start()
+    
+    return normalized
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Session State Init
+# ─────────────────────────────────────────────────────────────────────────────
+cached_init_db()
+settings = cached_get_settings()
+
+if "messages" not in st.session_state: st.session_state.messages = []
+if "session_id" not in st.session_state: st.session_state.session_id = str(uuid.uuid4())[:8]
 if "active_vault_path" not in st.session_state:
     initial = set_obsidian_vault_path(settings.obsidian_vault_path) if settings.obsidian_vault_path else None
     st.session_state.active_vault_path = initial
-    st.session_state.active_vault_name = _vault_name_from_path(initial)
-if "active_vault_name" not in st.session_state:
-    st.session_state.active_vault_name = _vault_name_from_path(st.session_state.active_vault_path)
-if "vault_palette_open" not in st.session_state:
-    st.session_state.vault_palette_open = True
-if "vault_search" not in st.session_state:
-    st.session_state.vault_search = ""
-if "new_vault_name" not in st.session_state:
-    st.session_state.new_vault_name = ""
-if "extra_context_files" not in st.session_state:
-    st.session_state.extra_context_files = ""
-if "extra_context_pasted" not in st.session_state:
-    st.session_state.extra_context_pasted = ""
-if "uploaded_files_signature" not in st.session_state:
-    st.session_state.uploaded_files_signature = ()
+if "vault_palette_open" not in st.session_state: st.session_state.vault_palette_open = True
+if "syncing_vault" not in st.session_state: st.session_state.syncing_vault = False
+if "last_sync_ts" not in st.session_state: st.session_state.last_sync_ts = "Never"
+if "agent_status_updates" not in st.session_state: st.session_state.agent_status_updates = []
+if "is_processing" not in st.session_state: st.session_state.is_processing = False
 if "active_mode" not in st.session_state:
-    persona_options = list(PERSONAS.keys())
-    st.session_state.active_mode = persona_options[0] if persona_options else None
-if "active_model" not in st.session_state:
-    st.session_state.active_model = settings.gemini_models[0] if settings.gemini_models else None
-if "clear_new_vault_name" not in st.session_state:
-    st.session_state.clear_new_vault_name = False
-if "composer_prompt" not in st.session_state:
-    st.session_state.composer_prompt = ""
-if "clear_composer_prompt" not in st.session_state:
-    st.session_state.clear_composer_prompt = False
-if "show_audit" not in st.session_state:
-    st.session_state.show_audit = False
-if "active_workflow" not in st.session_state:
-    st.session_state.active_workflow = "Plan"
-if "browser_path" not in st.session_state:
-    st.session_state.browser_path = os.path.expanduser("~")
-
-# Clear flags
-if st.session_state.clear_new_vault_name:
-    st.session_state.new_vault_name = ""
-    st.session_state.clear_new_vault_name = False
-if st.session_state.clear_composer_prompt:
-    st.session_state.composer_prompt = ""
-    st.session_state.clear_composer_prompt = False
-
-# Validate vault path still exists
-active_path = get_active_vault_path()
-if active_path and not os.path.isdir(active_path):
-    st.session_state.active_vault_path = None
-    st.session_state.active_vault_name = None
-    st.session_state.vault_palette_open = True
+    st.session_state.active_mode = list(PERSONAS.keys())[0] if PERSONAS else None
+if "active_workflow" not in st.session_state: st.session_state.active_workflow = "Plan"
+if "uploaded_files_signature" not in st.session_state: st.session_state.uploaded_files_signature = ()
+if "extra_context_files" not in st.session_state: st.session_state.extra_context_files = ""
+if "extra_context_pasted" not in st.session_state: st.session_state.extra_context_pasted = ""
+if "processing_start_time" not in st.session_state: st.session_state.processing_start_time = None
+if "loading_phrase" not in st.session_state: st.session_state.loading_phrase = ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Gate: vault launcher if no vault
+# UI: Vault Launcher (Full Page)
 # ─────────────────────────────────────────────────────────────────────────────
+
+def render_vault_launcher():
+    st.markdown("""<div style="max-width: 800px; margin: 10vh auto; text-align: center;"><h1>Vault Launcher</h1><p style="color: var(--text-secondary);">Select the foundation for your second brain.</p></div>""", unsafe_allow_html=True)
+    _, center, _ = st.columns([1, 2, 1])
+    with center:
+        tab_recent, tab_browse, tab_new = st.tabs(["Recent Vaults", "Browse Local", "Create New"])
+        with tab_recent:
+            vaults = list_vaults(active_path=get_active_vault_path())
+            if vaults:
+                for vault in vaults:
+                    col_info, col_btn = st.columns([3.5, 1], vertical_alignment="center")
+                    with col_info: 
+                        st.markdown(f"**{vault.name}**")
+                        st.markdown(f'<div class="address-badge">{vault.path}</div>', unsafe_allow_html=True)
+                    with col_btn:
+                        if st.button("Open", key=f"open_{vault.path}", use_container_width=True):
+                            activate_vault(vault.path)
+                            st.session_state.vault_palette_open = False
+                            st.rerun()
+                    st.divider()
+            else: st.info("No recent vaults found.")
+        
+        with tab_browse:
+            st.markdown("Select a folder as your vault using Windows Explorer.")
+            if st.button("Browse via File Explorer...", use_container_width=True):
+                import tkinter as tk; from tkinter import filedialog
+                root = tk.Tk(); root.withdraw(); root.wm_attributes('-topmost', 1)
+                folder_path = filedialog.askdirectory(master=root, title="Select Vault Directory")
+                root.destroy()
+                if folder_path:
+                    activate_vault(os.path.abspath(folder_path))
+                    st.session_state.vault_palette_open = False
+                    st.rerun()
+
+        with tab_new:
+            new_name = st.text_input("Vault Name", placeholder="e.g. My Notes")
+            if st.button("Create & Open", use_container_width=True, type="primary"):
+                if new_name:
+                    new_v = create_vault(new_name)
+                    activate_vault(new_v.path)
+                    st.session_state.vault_palette_open = False
+                    st.rerun()
+
 if st.session_state.vault_palette_open or not get_active_vault_path():
     render_vault_launcher()
     st.stop()
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# Sidebar — minimal
+# Sidebar
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown(f"### ◈ Second Brain")
-    st.caption(f"Session `{st.session_state.session_id}`")
-
+    st.markdown("### ◈ Second Brain")
+    
+    # Theme Toggle
+    col_t1, col_t2 = st.columns([3, 1])
+    with col_t1: st.caption(f"Session: `{st.session_state.session_id}`")
+    with col_t2:
+        if st.button("☾" if st.session_state.theme_mode == "light" else "☀"):
+            st.session_state.theme_mode = "dark" if st.session_state.theme_mode == "light" else "light"
+            st.rerun()
+            
     st.divider()
-
-    # Vault info
-    vault_name = get_active_vault_name() or "None"
-    st.markdown(f"**Vault** — {vault_name}")
-    st.caption(f"`{get_active_vault_path() or '—'}`")
-
-    if st.button("↗ Switch vault", use_container_width=True):
+    st.markdown(f"**Vault** — {get_active_vault_name()}")
+    st.markdown(f'<div class="address-badge">{get_active_vault_path()}</div>', unsafe_allow_html=True)
+    if st.button("↗ Switch Vault", use_container_width=True):
         st.session_state.vault_palette_open = True
         st.rerun()
-
+        
+    if st.session_state.syncing_vault: st.markdown("**(↻ Syncing...)**")
+    else: 
+        st.caption(f"Last sync: {st.session_state.last_sync_ts}")
+        if st.button("↻ Force refresh", use_container_width=True):
+            activate_vault(get_active_vault_path())
+            st.rerun()
     st.divider()
-
-    # New conversation
     if st.button("＋ New conversation", use_container_width=True):
-        st.session_state.messages = []
-        st.session_state.session_id = str(uuid.uuid4())[:8]
-        st.session_state.clear_composer_prompt = True
-        st.rerun()
-
-    # Audit log
-    if st.button("⊞ Audit log", use_container_width=True):
-        st.session_state.show_audit = not st.session_state.show_audit
-        st.rerun()
-
-    st.divider()
-
-    st.caption("Pipeline status is available in the chat input bar.")
-
+        st.session_state.messages = []; st.rerun()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Audit page (overlay)
+# Main Interface
 # ─────────────────────────────────────────────────────────────────────────────
-if st.session_state.show_audit:
-    st.markdown("### ⊞ Audit Log")
-    st.caption("Complete history of file operations on this vault.")
-
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        df_audit = pd.read_sql_query(
-            """
-            SELECT timestamp, task_id, agent_role, filepath, status, before_sha256, after_sha256
-            FROM file_edits ORDER BY timestamp DESC LIMIT 100
-            """,
-            conn,
-        )
-        conn.close()
-
-        if not df_audit.empty:
-            col_f, col_e = st.columns([3, 1])
-            with col_f:
-                opts = ["All"] + sorted(df_audit["status"].unique().tolist())
-                sel = st.selectbox("Filter by status", opts, key="audit_filter", label_visibility="collapsed")
-            with col_e:
-                st.download_button(
-                    "↓ Export CSV",
-                    data=df_audit.to_csv(index=False).encode("utf-8"),
-                    file_name="audit_log.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                )
-
-            if sel != "All":
-                df_audit = df_audit[df_audit["status"] == sel]
-
-            with st.container(border=True, height=480):
-                for _, row in df_audit.iterrows():
-                    try:
-                        ts = datetime.fromisoformat(row["timestamp"]).strftime("%Y-%m-%d %H:%M")
-                    except Exception:
-                        ts = row["timestamp"]
-
-                    status_class = row["status"]
-                    st.markdown(
-                        f'<div class="audit-row">'
-                        f'<span class="ts">{ts}</span>'
-                        f'<span class="agent">{row["agent_role"]}</span>'
-                        f'<span class="file">{row["filepath"]}</span>'
-                        f'<span class="audit-status {status_class}">{status_class}</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-        else:
-            st.info("No audit events yet. Run a task to start logging.")
-    except Exception as exc:
-        st.warning(f"Could not read audit log: {exc}")
-
-    st.divider()
-    if st.button("← Back to chat", use_container_width=True):
-        st.session_state.show_audit = False
-        st.rerun()
-    st.stop()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Main chat interface
-# ─────────────────────────────────────────────────────────────────────────────
-
-mode_options = list(PERSONAS.keys())
-model_capabilities = get_model_capabilities(st.session_state.active_model or "")
-if mode_options and st.session_state.active_mode not in mode_options:
-    st.session_state.active_mode = mode_options[0]
-
-# ── Messages area — scrollable container ─────────────────────────────
 chat_area = st.container(height=520, border=False)
-st.session_state.chat_history_container = chat_area
-
 with chat_area:
     if not st.session_state.messages:
-        st.markdown(
-            """
-            <div class="welcome-state">
-              <div class="glyph">◈</div>
-              <h2>What are we building?</h2>
-              <p>Type a request below to start. Your agents will plan, build, review, and deliver.</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown("""<div style="text-align: center; padding-top: 10vh;"><h2>Start building...</h2><p style="color: var(--text-secondary);">Describe your request below.</p></div>""", unsafe_allow_html=True)
     for msg in st.session_state.messages:
-        with st.chat_message(msg.get("role", "assistant")):
-            if "agent" in msg:
-                render_agent_output(msg["agent"], msg["content"])
-            else:
-                st.markdown(msg["content"])
+        with st.chat_message(msg["role"]):
+            if "agent" in msg: render_agent_output(msg["agent"], msg["content"])
+            else: st.markdown(msg["content"])
+    
+    # Inline loader as the next assistant message
+    if st.session_state.is_processing:
+        with st.chat_message("assistant"):
+            render_minimal_loader()
 
-
-# ── Input bar ────────────────────────────────────────────────────────
+# ── Composer (Input Bar) ─────────────────────────────────────────────
 with st.container(border=True):
-    agent_placeholders = {}
-
-    input_toolbar_left, input_toolbar_mid, input_toolbar_right = st.columns([0.18, 0.52, 0.30])
-
-    with input_toolbar_left:
+    toolbar_l, toolbar_m, toolbar_r = st.columns([0.2, 0.5, 0.3], vertical_alignment="bottom")
+    
+    with toolbar_l:
         with st.popover("Attach", use_container_width=True):
-            st.markdown("#### Attach context")
-            uploaded_files = st.file_uploader(
-                "Upload PDF, MD or TXT",
-                type=["pdf", "md", "txt"],
-                accept_multiple_files=True,
-                key="chat_file_uploader",
-            )
-            if uploaded_files:
-                total_files = len(uploaded_files)
-                current_signature = tuple(
-                    (f.name, hashlib.sha256(f.getvalue()).hexdigest()) for f in uploaded_files
-                )
-                if current_signature != st.session_state.uploaded_files_signature:
-                    extra_texts = []
-                    progress_bar = st.progress(0, text="Processing files...")
-                    for index, f in enumerate(uploaded_files, start=1):
-                        progress_bar.progress(
-                            int(((index - 1) / total_files) * 100),
-                            text=f"Processing {index}/{total_files}: {f.name}",
-                        )
-                        txt = extract_text_from_file(f)
-                        extra_texts.append(f"--- CONTENT OF {f.name} ---\n{txt}")
-                    progress_bar.progress(100, text=f"Done: {total_files}/{total_files}")
-                    st.session_state.extra_context_files = "\n\n".join(extra_texts)
-                    st.session_state.uploaded_files_signature = current_signature
-                st.success(f"{total_files} files ready.")
-            else:
-                st.session_state.extra_context_files = ""
-                st.session_state.uploaded_files_signature = ()
-
-            st.divider()
-            pasted = st.text_area(
-                "Paste from clipboard",
-                placeholder="Paste extra context here...",
-                key="chat_pasted_text",
-                height=90,
-            )
+            uploaded = st.file_uploader("Upload context", type=["md", "txt", "pdf"], accept_multiple_files=True)
+            if uploaded:
+                texts = []
+                for f in uploaded: texts.append(f"--- {f.name} ---\n{extract_text_from_file(f)}")
+                st.session_state.extra_context_files = "\n\n".join(texts)
+                st.success("Files attached.")
+            pasted = st.text_area("Paste text", placeholder="Context...", height=80)
             st.session_state.extra_context_pasted = pasted
 
-    with input_toolbar_mid:
-        col_wf, col_md = st.columns([1, 1.2])
+    with toolbar_m:
+        col_wf, col_md = st.columns(2, vertical_alignment="bottom")
         with col_wf:
-            selected_workflow = st.selectbox(
-                "Workflow",
-                options=["Plan", "Execute"],
-                index=0 if st.session_state.active_workflow == "Plan" else 1,
-                label_visibility="collapsed",
-                key="workflow_selector",
-            )
-            if selected_workflow != st.session_state.active_workflow:
-                st.session_state.active_workflow = selected_workflow
-                # Notification if Execute without history
-                if selected_workflow == "Execute" and not st.session_state.messages:
-                    st.toast("⚠️ Careful: Executing without a prior plan may lead to undesired results.", icon="⚠️")
+            workflow = st.selectbox("Workflow", ["Plan", "Execute"], index=0 if st.session_state.active_workflow=="Plan" else 1)
+            st.session_state.active_workflow = workflow
+        with col_md:
+            mode = st.selectbox("Mode", list(PERSONAS.keys()), index=list(PERSONAS.keys()).index(st.session_state.active_mode))
+            st.session_state.active_mode = mode
+
+    prompt = st.text_area("Prompt", placeholder="What do you need?", height=85, key="main_prompt", label_visibility="collapsed")
+    
+    with toolbar_r:
+        if st.button("Send", type="primary", use_container_width=True, disabled=st.session_state.is_processing):
+            if prompt.strip():
+                st.session_state.messages.append({"role": "user", "content": prompt.strip()})
+                # Prepare final prompt with context
+                ctx = []
+                if st.session_state.extra_context_files: ctx.append(st.session_state.extra_context_files)
+                if st.session_state.extra_context_pasted: ctx.append(st.session_state.extra_context_pasted)
+                final = prompt.strip()
+                if ctx: final = f"=== CONTEXT ===\n" + "\n\n".join(ctx) + f"\n\nTask: {final}"
+                
+                st.session_state.agent_status_updates = []
+                st.session_state.processing_start_time = time.time()
+                import random
+                phrases = ["Synthesizing context...", "Orchestrating agents...", "Structuring response...", "Parsing vault details...", "Refining proposed plan...", "Optimizing agent output...", "Finalizing results..."]
+                st.session_state.loading_phrase = random.choice(phrases)
+                
+                t = threading.Thread(target=_run_orchestrator_bg, args=(st.session_state.session_id, final, st.session_state.active_mode, st.session_state.active_workflow), daemon=True)
+                add_script_run_ctx(t)
+                t.start()
                 st.rerun()
 
-        with col_md:
-            if mode_options:
-                selected_mode = st.selectbox(
-                    "Mode",
-                    options=mode_options,
-                    index=mode_options.index(st.session_state.active_mode),
-                    label_visibility="collapsed",
-                    key="mode_selector",
-                )
-                st.session_state.active_mode = selected_mode
-            else:
-                st.caption("No modes available")
-
-    prompt = st.text_area(
-        "Prompt",
-        key="composer_prompt",
-        placeholder="Describe what you need...",
-        label_visibility="collapsed",
-        height=88,
-    )
-
-    with input_toolbar_right:
-        tasks_col, send_col = st.columns([1, 1.3])
-        with tasks_col:
-            with st.popover("Tasks", use_container_width=True):
-                st.markdown("#### Agent pipeline")
-                for agent in ["Manager", "Planner", "Researcher", "Builder", "Critic"]:
-                    agent_placeholders[agent] = st.status(agent, state="complete")
-        with send_col:
-            submitted = st.button("Send", key="composer_send", use_container_width=True, type="primary")
-
-    if model_capabilities.get("warning"):
-        st.caption(f"Warning: {model_capabilities['warning']}")
-
-
-# ── Handle submit ────────────────────────────────────────────────────
-if submitted and prompt.strip():
-    st.session_state.messages.append({"role": "user", "content": prompt.strip()})
-    st.session_state.clear_composer_prompt = True
+if st.session_state.is_processing:
+    time.sleep(1.0)
     st.rerun()
-
-# ── Run orchestrator ─────────────────────────────────────────────────
-if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-    last_prompt = st.session_state.messages[-1]["content"]
-    callback = StreamlitCallback(agent_placeholders)
-    orchestrator = Orchestrator(callback=callback)
-
-    with chat_area:
-        st.info("Agents are processing your request...")
-
-    final_prompt = last_prompt
-    context_parts = []
-    if st.session_state.get("extra_context_files"):
-        context_parts.append(st.session_state.extra_context_files)
-    if st.session_state.get("extra_context_pasted"):
-        context_parts.append(f"--- CLIPBOARD CONTENT ---\n{st.session_state.extra_context_pasted}")
-
-    if context_parts:
-        context_block = "\n\n=== USER-ATTACHED CONTEXT ===\n" + "\n\n".join(context_parts) + "\n=============================\n"
-        final_prompt = f"{context_block}\n\nRequested task: {last_prompt}"
-
-    try:
-        orchestrator.process_task(
-            st.session_state.session_id,
-            final_prompt,
-            mode=st.session_state.active_mode,
-            workflow=st.session_state.active_workflow,
-        )
-        st.balloons()
-        st.success("Task completed.")
-        time.sleep(1)
-        st.rerun()
-    except Exception as exc:
-        st.error(f"Critical failure: {exc}")
-        with st.expander("Technical details", expanded=True):
-            st.code(traceback.format_exc(), language="python")
